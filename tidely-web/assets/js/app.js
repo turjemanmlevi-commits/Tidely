@@ -1,0 +1,1306 @@
+/* =====================================================================
+   TIDELY storefront prototype
+   Vanilla JS + GSAP (ScrollTrigger, Flip, SplitText) + Lenis.
+   Every section maps 1:1 to a future Shopify theme section.
+   ===================================================================== */
+(() => {
+  'use strict';
+
+  /* ---------- Setup ---------- */
+  const { gsap, ScrollTrigger, Flip, SplitText, CustomEase, Lenis } = window;
+  gsap.registerPlugin(ScrollTrigger, Flip, SplitText, CustomEase);
+  CustomEase.create('tidely', 'M0,0 C0.16,1 0.3,1 1,1');
+  CustomEase.create('tidelyInOut', 'M0,0 C0.65,0 0.35,1 1,1');
+  gsap.defaults({ ease: 'tidely', duration: 1 });
+
+  const CONFIG = window.TIDELY_CONFIG;
+  const PRODUCTS = window.TIDELY_PRODUCTS;
+  const COLLECTIONS = window.TIDELY_COLLECTIONS;
+  const ICONS = window.TIDELY_ICONS;
+  const PAY = window.TIDELY_PAY;
+
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const finePointer = matchMedia('(hover: hover) and (pointer: fine)').matches;
+  const fmt = new Intl.NumberFormat(CONFIG.locale, { style: 'currency', currency: CONFIG.currency });
+  const fmt0 = new Intl.NumberFormat(CONFIG.locale, { style: 'currency', currency: CONFIG.currency, minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  const money = (n) => (Number.isInteger(n) ? fmt0 : fmt).format(n);
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const icon = (k) => `<svg viewBox="0 0 256 256" fill="currentColor" aria-hidden="true" focusable="false">${ICONS[k] || ''}</svg>`;
+  const ic = (k) => `<i data-icon="${k}">${icon(k)}</i>`;
+  const src = (name) => `assets/img/${name}.webp`;
+  const srcset = (name) => `assets/img/${name}-sm.webp 600w, assets/img/${name}.webp 1200w`;
+  const img = (name, alt, { sizes = '(max-width: 767px) 100vw, 50vw', cls = '', eager = false } = {}) =>
+    `<img class="${cls}" src="${src(name)}" srcset="${srcset(name)}" sizes="${sizes}" alt="${esc(alt)}" ${eager ? 'fetchpriority="high"' : 'loading="lazy"'} decoding="async">`;
+  const byHandle = (h) => PRODUCTS.find((p) => p.handle === h);
+  const collectionOf = (h) => COLLECTIONS.find((c) => c.handle === h);
+
+  const hydrateIcons = (root = document) => $$('i[data-icon]', root).forEach((el) => { if (!el.firstElementChild) el.innerHTML = icon(el.dataset.icon); });
+
+  /* ---------- Smooth scroll ---------- */
+  let lenis = null;
+  if (!reduced) {
+    lenis = new Lenis({ lerp: 0.09, wheelMultiplier: 0.95, touchMultiplier: 1.4 });
+    lenis.on('scroll', ScrollTrigger.update);
+    gsap.ticker.add((t) => lenis.raf(t * 1000));
+    gsap.ticker.lagSmoothing(0);
+  }
+  const lockScroll = (on) => { document.body.classList.toggle('is-locked', on); if (lenis) on ? lenis.stop() : lenis.start(); };
+  const scrollTo = (target, opts = {}) => { if (lenis) lenis.scrollTo(target, { duration: 1.4, ...opts }); else (typeof target === 'number' ? window.scrollTo(0, target) : $(target)?.scrollIntoView()); };
+
+  /* ---------- Pricing helpers ---------- */
+  const variantOf = (p, value) => {
+    const values = p.options?.values || [];
+    return values.find((v) => v.value === value) || values.find((v) => v.available !== false) || values[0] || null;
+  };
+  const priceOf = (p, value) => {
+    const v = variantOf(p, value);
+    return { price: v?.price ?? p.price, compareAt: v?.compareAt ?? p.compareAt };
+  };
+  const priceHtml = (p, value) => {
+    const { price, compareAt } = priceOf(p, value);
+    return `<span class="price">${compareAt ? `<s>${money(compareAt)}</s>` : ''}<span>${money(price)}</span></span>`;
+  };
+  const fromPrice = (p) => (p.options?.type === 'size' ? `From ${money(Math.min(...p.options.values.map((v) => v.price)))}` : money(p.price));
+
+  /* ---------- Cart state ---------- */
+  const CART_KEY = 'tidely-cart';
+  let cart = [];
+  try { cart = JSON.parse(localStorage.getItem(CART_KEY)) || []; } catch (e) { cart = []; }
+  cart = cart.filter((l) => byHandle(l.handle));
+  const saveCart = () => { try { localStorage.setItem(CART_KEY, JSON.stringify(cart)); } catch (e) { /* storage unavailable */ } };
+  const lineTotal = (l) => priceOf(byHandle(l.handle), l.option).price * l.qty;
+  const subtotal = () => cart.reduce((s, l) => s + lineTotal(l), 0);
+  const itemCount = () => cart.reduce((s, l) => s + l.qty, 0);
+
+  function addToCart(handle, option, qty = 1, fromEl = null) {
+    const p = byHandle(handle);
+    const opt = option || p.options?.values.find((v) => v.available !== false)?.value || null;
+    const key = `${handle}|${opt || ''}`;
+    const line = cart.find((l) => l.key === key);
+    if (line) line.qty = Math.min(line.qty + qty, 20); else cart.push({ key, handle, option: opt, qty });
+    saveCart();
+    renderCart();
+    const openAfter = () => openDrawer();
+    if (fromEl && !reduced) flyToCart(fromEl, openAfter); else { bumpCount(); openAfter(); }
+  }
+  function setQty(key, qty) {
+    const line = cart.find((l) => l.key === key);
+    if (!line) return;
+    line.qty = Math.max(0, Math.min(qty, 20));
+    if (!line.qty) cart = cart.filter((l) => l.key !== key);
+    saveCart();
+    renderCart();
+  }
+
+  /* ---------- Toast ---------- */
+  let toastTimer;
+  function toast(msg) {
+    const t = $('#toast');
+    t.innerHTML = `${ic('check')}<span>${esc(msg)}</span>`;
+    t.classList.add('is-on');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove('is-on'), 2600);
+  }
+
+  /* =====================================================================
+     COMPONENTS
+     ===================================================================== */
+  const productCard = (p, { feature = false, sizes } = {}) => {
+    const swatches = p.options?.type === 'colour'
+      ? `<div class="pcard__swatches" aria-label="${p.options.values.length} colours">${p.options.values.map((v) => `<span style="background:${v.hex}" title="${esc(v.value)}"></span>`).join('')}</div>` : '';
+    return `
+    <article class="pcard${feature ? ' is-feature' : ''}" data-flip-id="${p.handle}" data-collection="${p.collection}">
+      <div class="pcard__media">
+        <a class="pcard__link" href="#/product/${p.handle}" data-link aria-label="${esc(p.title)}">
+          ${img(p.card, p.title, { sizes: sizes || '(max-width: 767px) 90vw, 30vw' })}
+          ${img(p.cardAlt, `${p.title}, another view`, { cls: 'is-alt', sizes: sizes || '(max-width: 767px) 90vw, 30vw' })}
+        </a>
+        ${p.tag ? `<span class="pcard__tag">${esc(p.tag)}</span>` : ''}
+        <button class="pcard__quick" data-quick="${p.handle}" aria-label="Quick add ${esc(p.title)} to bag">${ic('plus')}<span>Quick add</span></button>
+      </div>
+      <div class="pcard__info">
+        <div>
+          <h3 class="pcard__title"><a href="#/product/${p.handle}" data-link>${esc(p.title)}</a></h3>
+          <p class="pcard__sub">${esc(p.subtitle)}</p>
+          ${swatches}
+        </div>
+        ${p.options?.type === 'size' ? `<span class="price">${fromPrice(p)}</span>` : priceHtml(p)}
+      </div>
+    </article>`;
+  };
+
+  const btn = (label, href, variant = 'solid', attrs = '') =>
+    `<a class="btn btn--${variant}" href="${href}" data-link ${attrs}><span>${label}</span><span class="btn__dot">${ic('arrow')}</span></a>`;
+
+  const accordion = (items, open = -1) => `<div class="acc">${items.map((it, i) => `
+      <div class="acc__item">
+        <button class="acc__btn" aria-expanded="${i === open}" aria-controls="acc-${it.id}" id="accb-${it.id}"><span>${esc(it.q)}</span>${ic('plus')}</button>
+        <div class="acc__panel" id="acc-${it.id}" role="region" aria-labelledby="accb-${it.id}" ${i === open ? 'style="height:auto"' : ''}>
+          <div class="acc__content">${it.a}</div>
+        </div>
+      </div>`).join('')}</div>`;
+
+  /* =====================================================================
+     PAGES
+     ===================================================================== */
+  const Pages = {};
+
+  /* ---------- Home ---------- */
+  Pages.home = () => {
+    const vanity = byHandle('stand-up-mesh-vanity-bag');
+    const marqueeWords = ['Travel better', 'Stay organized', 'Everything in its place', 'A tidier, brighter you', 'Small details, a bigger difference'];
+    const group = `<div class="marquee__group" aria-hidden="true">${marqueeWords.map((w) => `<span class="marquee__item">${w}</span><span class="marquee__sep">${icon('sparkle')}</span>`).join('')}</div>`;
+    const stack = [
+      { icon: 'grid', title: 'Holds its shape', text: 'Reinforced board keeps every compartment upright, even when a section is half empty.', image: 'crop-drawer-pair', link: 'drawer-organizer-17-grid' },
+      { icon: 'fold', title: 'Folds flat when you do not need it', text: 'Our fabric organizers collapse flat, so they never take up the space they were meant to save.', image: 'crop-underbed-fold', link: 'under-bed-storage-bag' },
+      { icon: 'drop', title: 'Wipes clean', text: 'Water-resistant trim on the Vanity Bag turns a spilled toner into a quick wipe, not a ruined bag.', image: 'crop-grey-bag', link: 'stand-up-mesh-vanity-bag' },
+      { icon: 'plug', title: 'A place for every cable', text: 'Elastic loops and mesh pockets keep chargers, earbuds and drives apart, so the one you need is easy to find.', image: 'crop-tech-open', link: 'double-layer-tech-organizer' },
+    ];
+    return `
+    <section class="hero" data-section="hero">
+      <div class="hero__bg"></div>
+      <div class="wrap hero__grid">
+        <div class="hero__copy">
+          <h1 class="hero__title" id="heroTitle">Everything in its <em>place.</em></h1>
+          <p class="hero__sub" data-hero-fade>Organizers for drawers, suitcases and shelves, designed to make everyday life feel calmer and lighter.</p>
+          <div class="hero__ctas" data-hero-fade>
+            ${btn('Shop the collection', '#/shop', 'solid', 'data-magnetic')}
+            <a class="btn btn--ghost" href="#/about" data-link><span>Our story</span></a>
+          </div>
+        </div>
+        <div class="hero__media" id="heroMedia">
+          <div class="hero__img hero__img--top frame" data-depth="0.5"><div class="frame__core">${img('crop-kit-flatlay', 'Tidely suede care kit next to its green gift box', { sizes: '20vw', eager: true })}</div></div>
+          <div class="hero__img hero__img--main frame" data-depth="0.25"><div class="frame__core">${img('crop-hero-ivory-bag', 'Ivory Stand-Up Vanity Bag on a marble bathroom counter', { sizes: '(max-width: 900px) 70vw, 36vw', eager: true })}</div></div>
+          <div class="hero__img hero__img--left frame" data-depth="0.9"><div class="frame__core">${img('crop-grey-bag', 'Grey Stand-Up Vanity Bag filled with makeup brushes', { sizes: '(max-width: 900px) 45vw, 22vw', eager: true })}</div></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="marquee" aria-label="Tidely values">
+      <div class="marquee__track" id="marquee">${group}${group}</div>
+    </section>
+
+    <section class="section" data-section="spaces">
+      <div class="wrap">
+        <div class="head">
+          <h2 class="h-xl" data-split>Shop by space</h2>
+          <p data-reveal>Start with the corner of your home that bothers you most.</p>
+        </div>
+        <div class="bento">
+          ${COLLECTIONS.map((c) => {
+            const n = PRODUCTS.filter((p) => p.collection === c.handle).length;
+            return `<a class="bento__cell" href="#/shop/${c.handle}" data-link data-reveal="clip">
+              ${img(c.image, `${c.title} organizers by Tidely`, { sizes: '(max-width: 767px) 100vw, 55vw' })}
+              <div class="bento__meta"><div><h3>${c.title}</h3><p>${n} ${n === 1 ? 'piece' : 'pieces'}</p></div><span class="bento__arrow">${icon('arrowUp')}</span></div>
+            </a>`;
+          }).join('')}
+        </div>
+      </div>
+    </section>
+
+    <section class="hscroll" id="collection" data-section="collection">
+      <div class="hscroll__pin">
+        <div class="wrap hscroll__top">
+          <div class="head" style="margin-bottom:0">
+            <span class="eyebrow" data-reveal>The collection</span>
+            <h2 class="h-xl" data-split>Five pieces, made for <em>daily use.</em></h2>
+          </div>
+        </div>
+        <div class="hscroll__track" id="hTrack">
+          ${PRODUCTS.map((p) => productCard(p, { sizes: '(max-width: 767px) 78vw, 24vw' })).join('')}
+          <a class="hscroll__end" href="#/shop" data-link><span>Shop the collection</span>${ic('arrow')}</a>
+        </div>
+        <div class="hscroll__progress" aria-hidden="true"><span id="hProgress"></span></div>
+      </div>
+    </section>
+
+    <section class="section" data-section="colour">
+      <div class="wrap colour">
+        <div class="colour__stage" id="colourStage" data-reveal="clip">
+          <img src="${src('crop-colour-row')}" alt="The Stand-Up Vanity Bag in grey, ivory, black, sage and blush" id="colourImg" loading="lazy" decoding="async">
+        </div>
+        <div class="colour__copy">
+          <h2 class="h-xl" data-split>Choose your colour</h2>
+          <p class="lede" data-reveal>Grey, ivory, black, sage or blush. Each Stand-Up Vanity Bag stands on its own, so brushes stay upright and the counter stays clear.</p>
+          <p class="colour__name" aria-live="polite"><span id="colourName">All five</span></p>
+          <div class="swatches" role="group" aria-label="Vanity Bag colours" data-reveal>
+            ${vanity.options.values.map((v) => `<button class="swatch${v.available === false ? ' is-soldout' : ''}" aria-pressed="false" data-colour="${v.value}" data-fx="${v.fx}" aria-label="${v.value}${v.available === false ? ', sold out' : ''}"><span class="swatch__chip" style="background:${v.hex}"></span>${v.value}</button>`).join('')}
+          </div>
+          <div data-reveal>${btn('Shop the vanity bag', '#/product/stand-up-mesh-vanity-bag', 'ghost', 'id="colourCta"')}</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section statement" data-section="statement">
+      <div class="wrap">
+        <p id="statement">A tidy home is not about owning less. It is about giving the things you use every day a <em>proper place.</em></p>
+      </div>
+    </section>
+
+    <section data-section="details">
+      <div class="wrap head" style="margin-bottom:0;padding-top:var(--section)">
+        <span class="eyebrow" data-reveal>Small details</span>
+        <h2 class="h-xl" data-split>The difference is in <em>how it is made.</em></h2>
+      </div>
+      <div class="stack" id="stack">
+        ${stack.map((s, i) => `
+        <div class="stack__card" style="--i:${i}">
+          <div class="stack__inner">
+            <span class="stack__shade" aria-hidden="true"></span>
+            <div class="stack__media">${img(s.image, s.title, { sizes: '(max-width: 900px) 90vw, 45vw' })}</div>
+            <div class="stack__copy">
+              <span class="stack__icon">${ic(s.icon)}</span>
+              <h3 class="h-lg">${s.title}</h3>
+              <p>${s.text}</p>
+              <a class="link-underline" href="#/product/${s.link}" data-link>${esc(byHandle(s.link).title)} ${ic('arrow')}</a>
+            </div>
+          </div>
+        </div>`).join('')}
+      </div>
+    </section>
+
+    <section class="section" data-section="compare">
+      <div class="wrap compare">
+        <div class="compare__stage" id="compare" data-reveal="clip" style="--pos:50%">
+          <img src="${src('crop-shoe-before')}" alt="Suede boot toe before cleaning, dusty and patchy" loading="lazy" decoding="async">
+          <img class="compare__after" src="${src('crop-shoe-after')}" alt="The same suede boot after cleaning with the Tidely kit" loading="lazy" decoding="async">
+          <span class="compare__label compare__label--before">Before</span>
+          <span class="compare__label compare__label--after">After</span>
+          <div class="compare__handle"><span class="compare__knob">${icon('compare')}</span></div>
+          <input class="compare__range" type="range" min="0" max="100" value="50" aria-label="Compare before and after cleaning">
+        </div>
+        <div class="compare__copy">
+          <h2 class="h-xl" data-split>Suede, <em>brought back.</em></h2>
+          <p class="lede" data-reveal>Dust and scuffs flatten suede and dull its colour. A few passes with the brush and pad lift the dirt and raise the nap again.</p>
+          <ul class="kit-list" data-reveal>
+            <li><span class="n">i</span><div><b>Cleaning brush</b><span>Nylon bristles sweep away everyday dust.</span></div></li>
+            <li><span class="n">ii</span><div><b>Protective cover</b><span>Snaps on so the brush stays clean in a bag.</span></div></li>
+            <li><span class="n">iii</span><div><b>Rubber cleaning pad</b><span>Lifts stubborn marks and restores the nap.</span></div></li>
+          </ul>
+          <div data-reveal>${btn('Shop the suede kit', '#/product/suede-care-kit', 'solid', 'data-magnetic')}</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" style="padding-top:0" data-section="promises">
+      <div class="wrap">
+        <div class="promises">
+          <div class="promise" data-reveal>${ic('truck')}<h3>Free shipping over ${money(CONFIG.freeShippingFrom)}</h3><p>Orders under ${money(CONFIG.freeShippingFrom)} ship for ${money(CONFIG.shippingCost)}.</p></div>
+          <div class="promise" data-reveal>${ic('returns')}<h3>${CONFIG.returnDays}-day returns</h3><p>Changed your mind? Send it back within ${CONFIG.returnDays} days of delivery.</p></div>
+          <div class="promise" data-reveal>${ic('lock')}<h3>Secure checkout</h3><p>Pay by card, PayPal, Apple Pay or Google Pay.</p></div>
+          <div class="promise" data-reveal>${ic('chat')}<h3>Help when you need it</h3><p>Write to us and a real person will get back to you.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" style="padding-top:0" data-section="newsletter">
+      <div class="wrap">
+        <div class="news" data-reveal="clip">
+          <span class="news__leaf" aria-hidden="true">${icon('leaf')}</span>
+          <div>
+            <h2 class="h-xl">A small welcome gift</h2>
+            <p>Join the Tidely list and get 10% off your first order, plus new arrivals and the occasional tip on keeping things in order. Unsubscribe any time.</p>
+          </div>
+          <form class="news__form" id="newsForm" novalidate>
+            <label for="newsEmail">Email address</label>
+            <div class="news__row">
+              <input id="newsEmail" type="email" name="email" autocomplete="email" placeholder="you@example.com" required>
+              <button class="btn btn--dark" type="submit"><span>Subscribe</span><span class="btn__dot">${ic('arrow')}</span></button>
+            </div>
+            <p class="news__help" id="newsHelp" aria-live="polite"></p>
+          </form>
+        </div>
+      </div>
+    </section>`;
+  };
+
+  /* ---------- Shop / collection ---------- */
+  Pages.shop = ({ collection }) => {
+    const c = collectionOf(collection);
+    const title = c ? c.title : 'Shop all';
+    const blurb = c ? c.blurb : 'Five considered pieces for drawers, suitcases, shelves and shoes.';
+    return `
+    <section class="page-head">
+      <div class="wrap">
+        <nav class="crumbs" aria-label="Breadcrumb"><a href="#/" data-link>Home</a><span>/</span><span aria-current="page">Shop</span></nav>
+        <div class="head" style="margin-bottom:0">
+          <h1 class="h-display" id="shopTitle" data-split>${title}</h1>
+          <p class="lede" id="shopBlurb" data-reveal>${blurb}</p>
+        </div>
+      </div>
+    </section>
+    <section class="wrap" style="padding-bottom:var(--section)">
+      <div class="toolbar">
+        <div class="chips" role="group" aria-label="Filter by space">
+          <button class="chip${!c ? ' is-active' : ''}" data-filter="all">All</button>
+          ${COLLECTIONS.map((x) => `<button class="chip${c?.handle === x.handle ? ' is-active' : ''}" data-filter="${x.handle}">${x.title}</button>`).join('')}
+        </div>
+        <label class="select">Sort
+          <select id="sort" aria-label="Sort products">
+            <option value="featured">Featured</option>
+            <option value="price-asc">Price, low to high</option>
+            <option value="price-desc">Price, high to low</option>
+          </select>${ic('caret')}
+        </label>
+      </div>
+      <div class="grid-products" id="grid"></div>
+      <div class="empty" id="empty" hidden><h2 class="h-md">Nothing here yet</h2><p>This space is waiting for its first piece.</p><button class="btn btn--ghost" data-filter="all"><span>Show everything</span></button></div>
+    </section>`;
+  };
+
+  /* ---------- Product ---------- */
+  Pages.product = ({ handle, query }) => {
+    const p = byHandle(handle);
+    if (!p) return Pages.notFound();
+    const c = collectionOf(p.collection);
+    const selected = variantOf(p, query.get('colour') || query.get('size'))?.value || null;
+    const start = selected && p.options?.values.find((v) => v.value === selected)?.image;
+    const startIdx = start ? Math.max(0, p.images.indexOf(start)) : 0;
+    const related = PRODUCTS.filter((x) => x.handle !== p.handle).slice(0, 3);
+    const details = p.images.filter((n) => !n.startsWith('crop-')).slice(1, 4);
+    const optionsHtml = p.options ? `
+      <div class="opt">
+        <p class="opt__label">${p.options.name}: <b id="optName">${esc(selected)}</b></p>
+        ${p.options.type === 'colour'
+          ? `<div class="swatches" role="group" aria-label="${p.options.name}">${p.options.values.map((v) => `<button class="swatch${v.available === false ? ' is-soldout' : ''}" aria-pressed="${v.value === selected}" data-opt="${esc(v.value)}" aria-label="${esc(v.value)}${v.available === false ? ', sold out' : ''}"><span class="swatch__chip" style="background:${v.hex}"></span>${esc(v.value)}</button>`).join('')}</div>`
+          : `<div class="sizes" role="group" aria-label="${p.options.name}">${p.options.values.map((v) => `<button class="size${v.available === false ? ' is-soldout' : ''}" aria-pressed="${v.value === selected}" data-opt="${esc(v.value)}">${esc(v.value)}</button>`).join('')}</div>`}
+      </div>` : '';
+    const { price, compareAt } = priceOf(p, selected);
+    return `
+    <section class="pdp" data-handle="${p.handle}">
+      <div class="wrap">
+        <nav class="crumbs" aria-label="Breadcrumb"><a href="#/shop" data-link>Shop</a><span>/</span><a href="#/shop/${c.handle}" data-link>${c.title}</a><span>/</span><span aria-current="page">${esc(p.title)}</span></nav>
+        <div class="pdp__grid">
+          <div class="gallery">
+            <div class="gallery__thumbs" role="tablist" aria-label="Product images">
+              ${p.images.map((n, i) => `<button class="gallery__thumb${i === startIdx ? ' is-active' : ''}" role="tab" aria-selected="${i === startIdx}" data-idx="${i}" aria-label="Image ${i + 1} of ${p.images.length}"><img src="assets/img/${n}-sm.webp" alt="" loading="lazy" decoding="async"></button>`).join('')}
+            </div>
+            <div class="gallery__main" id="galleryMain" data-reveal="clip">
+              ${img(p.images[startIdx], `${p.title}, image ${startIdx + 1}`, { sizes: '(max-width: 900px) 100vw, 55vw', eager: true })}
+              <div class="gallery__nav"><button id="gPrev" aria-label="Previous image">${ic('caretL')}</button><button id="gNext" aria-label="Next image">${ic('caretR')}</button></div>
+            </div>
+          </div>
+          <div class="pinfo">
+            <div style="display:grid;gap:1rem">
+              ${p.tag ? `<span class="eyebrow">${esc(p.tag)}</span>` : ''}
+              <h1 class="pinfo__title" data-split>${esc(p.title)}</h1>
+              <div class="pinfo__price" id="pPrice">${compareAt ? `<s>${money(compareAt)}</s>` : ''}<span>${money(price)}</span>${compareAt ? `<span class="save">Save ${Math.round((1 - price / compareAt) * 100)}%</span>` : ''}</div>
+            </div>
+            <p class="pinfo__lede" data-reveal>${esc(p.short)}</p>
+            ${optionsHtml}
+            <div class="buy" id="buy">
+              <div class="qty" role="group" aria-label="Quantity"><button data-q="-1" aria-label="Decrease quantity">${ic('minus')}</button><output id="qty">1</output><button data-q="1" aria-label="Increase quantity">${ic('plus')}</button></div>
+              <button class="btn btn--solid btn--block" id="addBtn" data-magnetic><span>Add to bag</span><span class="btn__dot">${ic('bag')}</span></button>
+            </div>
+            <div class="perks">
+              <div>${ic('truck')}<span>Free shipping over ${money(CONFIG.freeShippingFrom)}. Delivery in ${CONFIG.deliveryTime}.</span></div>
+              <div>${ic('returns')}<span>${CONFIG.returnDays}-day returns on unused items.</span></div>
+              <div>${ic('lock')}<span>Secure checkout. Prices include VAT.</span></div>
+            </div>
+            ${accordion([
+              { id: 'desc', q: 'Description', a: p.description.map((t) => `<p>${esc(t)}</p>`).join('') },
+              { id: 'feat', q: 'Features', a: `<ul>${p.highlights.map((h) => `<li>${esc(h)}</li>`).join('')}</ul>` },
+              { id: 'box', q: 'Materials & what is included', a: `<p>${esc(p.materials)}</p><ul>${p.inBox.map((h) => `<li>${esc(h)}</li>`).join('')}</ul><p>${esc(p.care)}</p>` },
+              { id: 'ship', q: 'Shipping & returns', a: `<p>Orders over ${money(CONFIG.freeShippingFrom)} ship free. Below that, shipping is ${money(CONFIG.shippingCost)}. Estimated delivery is ${CONFIG.deliveryTime}.</p><p>You can return unused items within ${CONFIG.returnDays} days of delivery. <a href="#/policy/returns" data-link class="gold">Read the returns policy</a>.</p>` },
+            ], 0)}
+          </div>
+        </div>
+      </div>
+    </section>
+
+    ${details.length ? `
+    <section class="section">
+      <div class="wrap">
+        <div class="head"><h2 class="h-xl" data-split>A closer look</h2></div>
+        <div class="detail-band" data-count="${details.length}">${details.map((n, i) => `<figure data-reveal="clip">${img(n, `${p.title}, detail ${i + 1}`, { sizes: i === 2 ? '100vw' : '(max-width: 767px) 100vw, 55vw' })}</figure>`).join('')}</div>
+      </div>
+    </section>` : ''}
+
+    <section class="section" style="padding-top:${details.length ? '0' : 'var(--section)'}">
+      <div class="wrap">
+        <div class="head"><h2 class="h-lg" data-split>You may also like</h2></div>
+        <div class="related">${related.map((x) => productCard(x)).join('')}</div>
+      </div>
+    </section>
+
+    <div class="sticky-buy" id="stickyBuy" aria-hidden="true">
+      <img src="assets/img/${p.card}-sm.webp" alt="">
+      <div class="sticky-buy__t"><b>${esc(p.title)}</b><span id="stickyPrice">${money(price)}</span></div>
+      <button class="btn btn--solid" id="stickyAdd" tabindex="-1"><span>Add to bag</span><span class="btn__dot">${ic('bag')}</span></button>
+    </div>`;
+  };
+
+  /* ---------- About ---------- */
+  Pages.about = () => `
+    <section class="page-head">
+      <div class="wrap about-hero">
+        <div class="head" style="margin-bottom:0">
+          <h1 class="h-display" data-split>Small things, <em>properly kept.</em></h1>
+          <p class="lede" data-reveal>Tidely started with a simple idea: the things you use every day deserve a proper place.</p>
+        </div>
+        <figure data-reveal="clip">${img('crop-drawer', 'A Tidely drawer organizer with rolled socks in neat rows', { sizes: '(max-width: 900px) 100vw, 45vw', eager: true })}</figure>
+      </div>
+    </section>
+    <section class="section">
+      <div class="wrap prose" data-reveal>
+        <p>A drawer where every pair of socks is visible. A suitcase that stays packed the way you packed it. A bathroom counter without a pile of brushes. Shoes that still look good in their third winter.</p>
+        <p>None of it is complicated. It just needs the right piece in the right place. That is what we look for: simple, well-made organizers that solve one everyday problem and then quietly get out of the way.</p>
+      </div>
+    </section>
+    <section class="section" style="padding-top:0">
+      <div class="wrap">
+        <div class="head"><h2 class="h-xl" data-split>What we care about</h2></div>
+        <div class="values">
+          <div class="value" data-reveal>${ic('sparkle')}<h3 class="h-md">Made for daily use</h3><p>We choose pieces you reach for every day, not gadgets that end up at the back of a cupboard.</p>${img('crop-colour-row', 'Five Vanity Bags in a row', { sizes: '(max-width: 900px) 100vw, 55vw' })}</div>
+          <div class="value" data-reveal>${ic('fold')}<h3 class="h-md">Designed to fold away</h3><p>Almost everything we sell folds flat, so storage never needs storage of its own.</p></div>
+          <div class="value" data-reveal>${ic('leaf')}<h3 class="h-md">Fair, clear prices</h3><p>Prices include VAT, shipping is free over ${money(CONFIG.freeShippingFrom)} and returns are simple.</p></div>
+        </div>
+        <div style="margin-top:3rem" data-reveal>${btn('Shop the collection', '#/shop', 'solid', 'data-magnetic')}</div>
+      </div>
+    </section>`;
+
+  /* ---------- FAQ ---------- */
+  const FAQ = [
+    { id: 'shipping', title: 'Orders & shipping', items: [
+      { q: 'Where do you ship?', a: '<p>We ship to Spain and most of the European Union. The countries available for your order are shown at checkout.</p>' },
+      { q: 'How long does delivery take?', a: `<p>Most orders arrive in ${CONFIG.deliveryTime}. You will receive a tracking link by email as soon as your order ships.</p>` },
+      { q: 'How much does shipping cost?', a: `<p>Shipping is free on orders over ${money(CONFIG.freeShippingFrom)}. Below that, it costs ${money(CONFIG.shippingCost)}.</p>` },
+    ] },
+    { id: 'returns', title: 'Returns & refunds', items: [
+      { q: 'What is your return policy?', a: `<p>You can return unused items in their original packaging within ${CONFIG.returnDays} days of delivery.</p>` },
+      { q: 'How do I start a return?', a: `<p>Email <a class="gold" href="mailto:${CONFIG.email}">${CONFIG.email}</a> with your order number and we will send you the next steps.</p>` },
+      { q: 'When will I get my refund?', a: '<p>Refunds go back to your original payment method within 14 days of us receiving the return.</p>' },
+    ] },
+    { id: 'products', title: 'Products', items: [
+      { q: 'Which under-bed bag size do I need?', a: '<p>Choose L for blankets, throws and folded clothes. Choose XL for duvets and bulky bedding.</p>' },
+      { q: 'Can the Vanity Bag go in hand luggage?', a: '<p>Yes, it fits easily in a carry-on. Liquids still need to follow your airline’s rules.</p>' },
+      { q: 'How do I clean my organizers?', a: '<p>Wipe fabric and EVA pieces with a damp cloth and let them air-dry. Care details are on each product page.</p>' },
+    ] },
+    { id: 'payment', title: 'Payment', items: [
+      { q: 'Which payment methods do you accept?', a: '<p>Visa, Mastercard, American Express, PayPal, Apple Pay and Google Pay.</p>' },
+      { q: 'Do prices include VAT?', a: '<p>Yes. All prices include VAT, so the price you see is the price you pay, plus shipping on orders under the free shipping threshold.</p>' },
+    ] },
+  ];
+  Pages.faq = () => `
+    <section class="page-head">
+      <div class="wrap head" style="margin-bottom:0">
+        <h1 class="h-display" data-split>How can we help?</h1>
+        <p class="lede" data-reveal>Answers to the questions we hear most. If yours is not here, <a class="gold" href="#/contact" data-link>send us a message</a>.</p>
+      </div>
+    </section>
+    <section class="wrap faq-grid" style="padding-bottom:var(--section)">
+      <nav class="faq-nav" aria-label="FAQ topics">${FAQ.map((g) => `<button data-scroll="#faq-${g.id}" style="text-align:left" class="faq-nav__btn"><span class="muted">${g.title}</span></button>`).join('')}</nav>
+      <div>${FAQ.map((g) => `<div class="faq-group" id="faq-${g.id}" data-reveal><h2>${g.title}</h2>${accordion(g.items.map((it, i) => ({ ...it, id: `${g.id}-${i}` })))}</div>`).join('')}</div>
+    </section>`;
+
+  /* ---------- Contact ---------- */
+  Pages.contact = () => `
+    <section class="page-head">
+      <div class="wrap contact">
+        <div style="display:grid;gap:2rem">
+          <div class="head" style="margin-bottom:0">
+            <h1 class="h-display" data-split>Get in touch</h1>
+            <p class="lede" data-reveal>Questions about an order, a product or a return? Send us a message and we will get back to you.</p>
+          </div>
+          <div class="contact__info" data-reveal>
+            <div>${ic('mail')}<p><b>Email</b><br><a class="gold" href="mailto:${CONFIG.email}">${CONFIG.email}</a></p></div>
+            <div>${ic('clock')}<p><b>Hours</b><br><span class="muted">Monday to Friday, 9:00 to 18:00 CET</span></p></div>
+          </div>
+        </div>
+        <form class="form" id="contactForm" novalidate data-reveal="clip">
+          <div class="field"><label for="cName">Name</label><input id="cName" name="name" autocomplete="name" required><small></small></div>
+          <div class="field"><label for="cEmail">Email</label><input id="cEmail" name="email" type="email" autocomplete="email" required><small></small></div>
+          <div class="field"><label for="cOrder">Order number (optional)</label><input id="cOrder" name="order" inputmode="numeric"><small>You will find it in your confirmation email.</small></div>
+          <div class="field"><label for="cMsg">Message</label><textarea id="cMsg" name="message" required></textarea><small></small></div>
+          <button class="btn btn--dark" type="submit" style="justify-self:start"><span>Send message</span><span class="btn__dot">${ic('send')}</span></button>
+        </form>
+      </div>
+    </section>
+    <div style="height:var(--section)"></div>`;
+
+  /* ---------- Policies ---------- */
+  const POLICIES = {
+    shipping: { title: 'Shipping policy', body: `
+      <p>We ship to Spain and most of the European Union. Available countries are shown at checkout.</p>
+      <h2>Costs</h2><p>Shipping is free on orders over ${money(CONFIG.freeShippingFrom)}. Orders below that ship for ${money(CONFIG.shippingCost)}.</p>
+      <h2>Delivery times</h2><p>Orders are processed within 1 to 2 business days. Estimated delivery is ${CONFIG.deliveryTime} after dispatch. You will receive a tracking link by email once your order ships.</p>` },
+    returns: { title: 'Returns & refunds', body: `
+      <p>You have ${CONFIG.returnDays} days from delivery to return any unused item in its original packaging.</p>
+      <h2>How to return</h2><p>Email <a href="mailto:${CONFIG.email}">${CONFIG.email}</a> with your order number. We will reply with the return address and instructions.</p>
+      <h2>Refunds</h2><p>Once we receive and check your return, we refund the original payment method within 14 days. Original shipping costs are refunded when the whole order is returned.</p>
+      <h2>Damaged or wrong items</h2><p>If something arrives damaged or is not what you ordered, write to us within 48 hours with a photo and we will make it right.</p>` },
+    privacy: { title: 'Privacy policy', body: `
+      <p>We only collect the information we need to process your order and, if you subscribe, to send you our newsletter.</p>
+      <h2>What we collect</h2><p>Your name, email, shipping address and order details. Payments are handled by our payment providers; we never see or store your full card number.</p>
+      <h2>Your rights</h2><p>You can ask us to access, correct or delete your data at any time by emailing <a href="mailto:${CONFIG.email}">${CONFIG.email}</a>.</p>` },
+    terms: { title: 'Terms of service', body: `
+      <p>By placing an order with Tidely you agree to these terms.</p>
+      <h2>Prices</h2><p>All prices are in euros and include VAT. We may change prices at any time, but changes never affect orders already placed.</p>
+      <h2>Orders</h2><p>We confirm every order by email. We may cancel an order if an item is out of stock or a pricing error occurred, and we refund you in full if so.</p>` },
+  };
+  Pages.policy = ({ id }) => {
+    const pol = POLICIES[id];
+    if (!pol) return Pages.notFound();
+    return `
+    <section class="page-head"><div class="wrap head" style="margin-bottom:0"><h1 class="h-display" data-split>${pol.title}</h1></div></section>
+    <section class="wrap" style="padding-bottom:var(--section)"><div class="prose" data-reveal>${pol.body}</div></section>`;
+  };
+
+  Pages.notFound = () => `
+    <section class="page-head" style="min-height:70dvh;display:grid;align-content:center">
+      <div class="wrap head">
+        <h1 class="h-display" data-split>This page is <em>out of place.</em></h1>
+        <p class="lede" data-reveal>The link may be old, or the page has moved. Everything else is right where it should be.</p>
+        <div data-reveal>${btn('Shop the collection', '#/shop')}</div>
+      </div>
+    </section>`;
+
+  /* ---------- Footer (rendered once) ---------- */
+  function renderFooter() {
+    const pay = ['visa', 'mastercard', 'amex', 'paypal', 'applepay', 'googlepay'].map((k) => PAY[k] ? `<span title="${PAY[k].title}"><svg viewBox="0 0 24 24" role="img" aria-label="${PAY[k].title}"><path d="${PAY[k].path}"/></svg></span>` : '').join('');
+    $('#footer').innerHTML = `
+      <div class="wrap footer__grid">
+        <div class="footer__brand">
+          <a href="#/" data-link class="logo" style="margin:0;justify-self:start">TIDELY</a>
+          <p>Considered organizers for drawers, suitcases, shelves and shoes. Everything in its place.</p>
+          <div class="socials">
+            <a href="#/" data-link aria-label="Tidely on Instagram">${ic('instagram')}</a>
+            <a href="#/" data-link aria-label="Tidely on TikTok">${ic('tiktok')}</a>
+            <a href="#/" data-link aria-label="Tidely on Pinterest">${ic('pinterest')}</a>
+          </div>
+        </div>
+        <div><h4>Shop</h4><ul>${COLLECTIONS.map((c) => `<li><a href="#/shop/${c.handle}" data-link>${c.title}</a></li>`).join('')}<li><a href="#/shop" data-link>Shop all</a></li></ul></div>
+        <div><h4>Help</h4><ul><li><a href="#/faq" data-link>FAQ</a></li><li><a href="#/policy/shipping" data-link>Shipping</a></li><li><a href="#/policy/returns" data-link>Returns</a></li><li><a href="#/contact" data-link>Contact</a></li></ul></div>
+        <div><h4>Tidely</h4><ul><li><a href="#/about" data-link>Our story</a></li><li><a href="#/policy/privacy" data-link>Privacy</a></li><li><a href="#/policy/terms" data-link>Terms</a></li></ul></div>
+      </div>
+      <div class="wrap footer__bottom">
+        <span>© ${new Date().getFullYear()} Tidely. Prices include VAT.</span>
+        <div class="pay" aria-label="Accepted payment methods">${pay}</div>
+      </div>
+      <div class="footer__word" aria-hidden="true" id="footerWord">${'TIDELY'.split('').map((l) => `<span>${l}</span>`).join('')}</div>`;
+  }
+
+  /* =====================================================================
+     ANIMATION HELPERS
+     ===================================================================== */
+  function splitHeadings(root) {
+    $$('[data-split]', root).forEach((el) => {
+      if (reduced) return;
+      SplitText.create(el, {
+        type: 'lines', mask: 'lines', autoSplit: true,
+        onSplit(self) {
+          return gsap.from(self.lines, {
+            yPercent: 110, duration: 1.2, stagger: 0.09, ease: 'expo.out',
+            scrollTrigger: { trigger: el, start: 'top 88%', once: true },
+          });
+        },
+      });
+    });
+  }
+
+  function reveals(root) {
+    const els = $$('[data-reveal]', root);
+    if (reduced) { gsap.set(els, { opacity: 1 }); return; }
+    const clip = els.filter((e) => e.dataset.reveal === 'clip');
+    const up = els.filter((e) => e.dataset.reveal !== 'clip');
+    gsap.set(up, { y: 48, opacity: 0, filter: 'blur(6px)' });
+    ScrollTrigger.batch(up, {
+      start: 'top 90%', once: true,
+      onEnter: (batch) => gsap.to(batch, { y: 0, opacity: 1, filter: 'blur(0px)', duration: 1.1, stagger: 0.09, clearProps: 'filter' }),
+    });
+    clip.forEach((el) => {
+      gsap.set(el, { opacity: 1, clipPath: 'inset(12% 8% 12% 8% round 4px)' });
+      const inner = el.querySelector('img');
+      if (inner) gsap.set(inner, { scale: 1.18 });
+      ScrollTrigger.create({
+        trigger: el, start: 'top 88%', once: true,
+        onEnter: () => {
+          gsap.to(el, { clipPath: 'inset(0% 0% 0% 0% round 4px)', duration: 1.5, ease: 'expo.out', clearProps: 'clipPath' });
+          if (inner) gsap.to(inner, { scale: 1, duration: 1.8, ease: 'expo.out', clearProps: 'transform' });
+        },
+      });
+    });
+  }
+
+  function magnetic(root) {
+    if (!finePointer || reduced) return;
+    $$('[data-magnetic]', root).forEach((el) => {
+      const xTo = gsap.quickTo(el, 'x', { duration: 0.6, ease: 'elastic.out(1, 0.4)' });
+      const yTo = gsap.quickTo(el, 'y', { duration: 0.6, ease: 'elastic.out(1, 0.4)' });
+      el.addEventListener('pointermove', (e) => {
+        const r = el.getBoundingClientRect();
+        xTo((e.clientX - (r.left + r.width / 2)) * 0.22);
+        yTo((e.clientY - (r.top + r.height / 2)) * 0.3);
+      });
+      el.addEventListener('pointerleave', () => { xTo(0); yTo(0); });
+    });
+  }
+
+  function accordions(root) {
+    $$('.acc__btn', root).forEach((b) => {
+      b.addEventListener('click', () => {
+        const panel = document.getElementById(b.getAttribute('aria-controls'));
+        const open = b.getAttribute('aria-expanded') === 'true';
+        b.setAttribute('aria-expanded', String(!open));
+        gsap.to(panel, { height: open ? 0 : 'auto', duration: reduced ? 0 : 0.7, ease: 'expo.out', onComplete: () => ScrollTrigger.refresh() });
+      });
+    });
+  }
+
+  /* =====================================================================
+     PAGE CONTROLLERS (interactions + choreography)
+     ===================================================================== */
+  const Controllers = {};
+
+  Controllers.home = (root, { intro }) => {
+    // Hero entrance
+    const title = $('#heroTitle', root);
+    const heroTl = gsap.timeline({ paused: true, defaults: { ease: 'expo.out' } });
+    if (!reduced) {
+      const split = SplitText.create(title, { type: 'lines,words', mask: 'lines' });
+      heroTl.from(split.lines, { yPercent: 115, duration: 1.4, stagger: 0.12 })
+        .from($$('[data-hero-fade]', root), { y: 30, opacity: 0, duration: 1.2, stagger: 0.12 }, '-=1')
+        .from($$('.hero__img', root), { clipPath: 'inset(100% 0% 0% 0%)', duration: 1.6, stagger: 0.14, ease: 'expo.inOut' }, 0)
+        .from($$('.hero__img img', root), { scale: 1.3, duration: 2, stagger: 0.14 }, 0.1);
+      intro.then(() => heroTl.play());
+
+      // Parallax on scroll
+      gsap.utils.toArray('.hero__img', root).forEach((el) => {
+        gsap.to(el, { yPercent: -parseFloat(el.dataset.depth) * 30, ease: 'none', scrollTrigger: { trigger: '.hero', start: 'top top', end: 'bottom top', scrub: true } });
+      });
+      gsap.to('.hero__copy', { yPercent: -18, opacity: 0.2, ease: 'none', scrollTrigger: { trigger: '.hero', start: 'top top', end: 'bottom top', scrub: true } });
+
+      // Pointer depth on the image stack
+      if (finePointer) {
+        const media = $('#heroMedia', root);
+        const layers = $$('.hero__img', media).map((el) => ({
+          x: gsap.quickTo(el.querySelector('.frame__core'), 'x', { duration: 1.2, ease: 'power3.out' }),
+          y: gsap.quickTo(el.querySelector('.frame__core'), 'y', { duration: 1.2, ease: 'power3.out' }),
+          d: parseFloat(el.dataset.depth),
+        }));
+        const onMove = (e) => {
+          const nx = e.clientX / innerWidth - 0.5; const ny = e.clientY / innerHeight - 0.5;
+          layers.forEach((l) => { l.x(nx * 28 * l.d); l.y(ny * 22 * l.d); });
+        };
+        window.addEventListener('pointermove', onMove);
+        cleanups.push(() => window.removeEventListener('pointermove', onMove));
+      }
+    }
+
+    // Marquee: velocity-reactive loop
+    const track = $('#marquee', root);
+    if (!reduced) {
+      const loop = gsap.to(track, { xPercent: -50, duration: 38, ease: 'none', repeat: -1 });
+      loop.totalTime(loop.duration() * 100); // start deep in the repeat cycle so it can also run backwards
+      let dir = 1;
+      ScrollTrigger.create({
+        trigger: track, start: 'top bottom', end: 'bottom top',
+        onUpdate: (self) => {
+          const v = self.getVelocity();
+          if (self.direction !== dir) dir = self.direction;
+          gsap.to(loop, { timeScale: dir * Math.min(1 + Math.abs(v) / 400, 5), duration: 0.3, overwrite: true });
+          gsap.to(loop, { timeScale: dir, duration: 1.2, delay: 0.3, overwrite: false });
+        },
+      });
+    }
+
+    // Bento: inner parallax
+    if (!reduced) {
+      $$('.bento__cell img', root).forEach((im) => {
+        gsap.fromTo(im, { yPercent: -5 }, { yPercent: 5, ease: 'none', scrollTrigger: { trigger: im.parentElement, start: 'top bottom', end: 'bottom top', scrub: true } });
+      });
+    }
+
+    // Horizontal collection (desktop pin, mobile native scroll)
+    const mm = gsap.matchMedia();
+    mm.add('(min-width: 768px) and (prefers-reduced-motion: no-preference)', () => {
+      const tr = $('#hTrack', root);
+      const distance = () => tr.scrollWidth - innerWidth;
+      const tween = gsap.to(tr, {
+        x: () => -distance(), ease: 'none',
+        scrollTrigger: {
+          trigger: '#collection', start: 'top top', end: () => `+=${distance()}`, pin: '.hscroll__pin', scrub: 1, invalidateOnRefresh: true,
+          onUpdate: (self) => gsap.set('#hProgress', { scaleX: self.progress }),
+        },
+      });
+      $$('.pcard__media img', tr).forEach((im) => {
+        gsap.fromTo(im, { xPercent: -6 }, { xPercent: 6, ease: 'none', scrollTrigger: { trigger: im.closest('.pcard'), containerAnimation: tween, start: 'left right', end: 'right left', scrub: true } });
+      });
+      return () => gsap.set(tr, { clearProps: 'x' });
+    });
+    matchMedias.push(mm);
+
+    // Colour explorer
+    const stage = $('#colourStage', root);
+    const cImg = $('#colourImg', root);
+    const nameEl = $('#colourName', root);
+    const cta = $('#colourCta', root);
+    const ratio = 1254 / 540;
+    const frameFor = (fx) => {
+      const r = stage.getBoundingClientRect();
+      const w = r.height * ratio;
+      if (fx == null) { const s = r.width / w; return { x: 0, scale: s }; }
+      const s = 1.08;
+      const limit = Math.max(0, (w * s - r.width) / 2); // keep the image covering the stage edges
+      return { x: gsap.utils.clamp(-limit, limit, -(fx - 0.5) * w * s), scale: s };
+    };
+    let current = null;
+    const setColour = (btnEl, instant = false) => {
+      const fx = btnEl ? parseFloat(btnEl.dataset.fx) : null;
+      current = btnEl?.dataset.colour || null;
+      $$('.swatch', stage.parentElement).forEach((b) => b.setAttribute('aria-pressed', String(b === btnEl)));
+      gsap.to(cImg, { ...frameFor(fx), xPercent: -50, yPercent: -50, duration: instant || reduced ? 0 : 1.4, ease: 'expo.inOut', overwrite: true });
+      const label = current || 'All five';
+      if (reduced || instant) nameEl.textContent = label;
+      else gsap.timeline().to(nameEl, { yPercent: -110, duration: 0.4, ease: 'power3.in' }).add(() => { nameEl.textContent = label; }).fromTo(nameEl, { yPercent: 110 }, { yPercent: 0, duration: 0.8, ease: 'expo.out' });
+      if (cta) cta.setAttribute('href', `#/product/stand-up-mesh-vanity-bag${current ? `?colour=${encodeURIComponent(current)}` : ''}`);
+    };
+    gsap.set(cImg, { xPercent: -50, yPercent: -50, x: 0, y: 0 });
+    const fit = () => { if (!current) gsap.set(cImg, frameFor(null)); else setColour($(`.swatch[data-colour="${current}"]`, root), true); };
+    fit();
+    $$('.swatch', root).forEach((b) => b.addEventListener('click', () => setColour(b)));
+    ScrollTrigger.create({ trigger: stage, start: 'top 55%', once: true, onEnter: () => { if (!current) gsap.delayedCall(0.6, () => setColour($('.swatch', root))); } });
+    const onResize = () => fit();
+    window.addEventListener('resize', onResize);
+    cleanups.push(() => window.removeEventListener('resize', onResize));
+
+    // Statement: words light up as you read
+    const st = $('#statement', root);
+    const words = [];
+    const wrapWords = (node) => {
+      [...node.childNodes].forEach((n) => {
+        if (n.nodeType === 3) {
+          const frag = document.createDocumentFragment();
+          n.textContent.split(/(\s+)/).forEach((t) => {
+            if (!t) return;
+            if (/^\s+$/.test(t)) frag.appendChild(document.createTextNode(t));
+            else { const s = document.createElement('span'); s.className = 'word'; s.textContent = t; frag.appendChild(s); words.push(s); }
+          });
+          n.replaceWith(frag);
+        } else wrapWords(n);
+      });
+    };
+    wrapWords(st);
+    if (!reduced) gsap.to(words, { opacity: 1, stagger: 0.1, ease: 'none', scrollTrigger: { trigger: st, start: 'top 80%', end: 'bottom 45%', scrub: true } });
+
+    // Sticky stack: each card recedes as the next arrives
+    if (!reduced) {
+      const cards = $$('.stack__card', root);
+      cards.forEach((card, i) => {
+        if (i === cards.length - 1) return;
+        const st = { trigger: cards[i + 1], start: 'top bottom', end: 'top top', scrub: true };
+        gsap.to(card.querySelector('.stack__inner'), { scale: 0.92, ease: 'none', scrollTrigger: st });
+        gsap.to(card.querySelector('.stack__shade'), { opacity: 0.65, ease: 'none', scrollTrigger: { ...st } });
+      });
+      cards.forEach((card) => gsap.from(card.querySelector('.stack__media img'), { scale: 1.2, ease: 'none', scrollTrigger: { trigger: card, start: 'top bottom', end: 'top top', scrub: true } }));
+    }
+
+    // Before / after
+    const cmp = $('#compare', root);
+    const range = $('.compare__range', cmp);
+    const setPos = (v) => { cmp.style.setProperty('--pos', `${v}%`); range.value = v; };
+    range.addEventListener('input', () => setPos(range.value));
+    if (!reduced) {
+      const demo = { v: 50 };
+      ScrollTrigger.create({
+        trigger: cmp, start: 'top 60%', once: true,
+        onEnter: () => gsap.timeline({ delay: 0.4 })
+          .to(demo, { v: 12, duration: 1.1, ease: 'power3.inOut', onUpdate: () => setPos(demo.v) })
+          .to(demo, { v: 86, duration: 1.4, ease: 'power3.inOut', onUpdate: () => setPos(demo.v) })
+          .to(demo, { v: 50, duration: 1, ease: 'power3.inOut', onUpdate: () => setPos(demo.v) }),
+      });
+    }
+
+    // Newsletter
+    const form = $('#newsForm', root);
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const input = $('#newsEmail', form); const help = $('#newsHelp', form); const b = $('button', form);
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.value.trim())) { help.textContent = 'Please enter a valid email address.'; help.classList.add('is-error'); input.focus(); return; }
+      help.classList.remove('is-error'); b.disabled = true; $('span', b).textContent = 'Joining';
+      setTimeout(() => { b.disabled = false; $('span', b).textContent = 'Subscribed'; help.textContent = 'Welcome to Tidely. Your code is on its way to your inbox.'; input.value = ''; }, 800);
+    });
+  };
+
+  Controllers.shop = (root, { params }) => {
+    const grid = $('#grid', root);
+    const empty = $('#empty', root);
+    const sortSel = $('#sort', root);
+    let filter = params.collection && collectionOf(params.collection) ? params.collection : 'all';
+    const draw = (animate) => {
+      let list = PRODUCTS.filter((p) => filter === 'all' || p.collection === filter);
+      if (sortSel.value === 'price-asc') list = [...list].sort((a, b) => a.price - b.price);
+      if (sortSel.value === 'price-desc') list = [...list].sort((a, b) => b.price - a.price);
+      const state = animate && !reduced ? Flip.getState($$('.pcard', grid)) : null;
+      grid.innerHTML = list.map((p, i) => productCard(p, { feature: i === 0 && list.length >= 4 })).join('');
+      empty.hidden = list.length > 0;
+      if (state) {
+        Flip.from(state, {
+          targets: $$('.pcard', grid), duration: 0.9, ease: 'expo.inOut', absolute: true, scale: true,
+          onEnter: (els) => gsap.fromTo(els, { opacity: 0, y: 40 }, { opacity: 1, y: 0, duration: 0.9, delay: 0.2 }),
+          onLeave: (els) => gsap.to(els, { opacity: 0, scale: 0.9, duration: 0.5 }),
+          onComplete: () => ScrollTrigger.refresh(),
+        });
+      } else if (!reduced) {
+        gsap.from($$('.pcard', grid), { y: 60, opacity: 0, duration: 1.2, stagger: 0.08, ease: 'expo.out', delay: 0.2 });
+      }
+    };
+    const setFilter = (f) => {
+      filter = f;
+      $$('.chip', root).forEach((c) => c.classList.toggle('is-active', c.dataset.filter === f));
+      const c = collectionOf(f);
+      $('#shopTitle', root).textContent = c ? c.title : 'Shop all';
+      $('#shopBlurb', root).textContent = c ? c.blurb : 'Five considered pieces for drawers, suitcases, shelves and shoes.';
+      history.replaceState(null, '', f === 'all' ? '#/shop' : `#/shop/${f}`);
+      document.title = `${c ? c.title : 'Shop all'} | Tidely`;
+      draw(true);
+    };
+    $$('[data-filter]', root).forEach((b) => b.addEventListener('click', () => setFilter(b.dataset.filter)));
+    sortSel.addEventListener('change', () => draw(true));
+    draw(false);
+  };
+
+  Controllers.product = (root) => {
+    const pdp = $('.pdp', root);
+    if (!pdp) return;
+    const p = byHandle(pdp.dataset.handle);
+    const main = $('#galleryMain', root);
+    const thumbs = $$('.gallery__thumb', root);
+    let idx = thumbs.findIndex((t) => t.classList.contains('is-active'));
+    let option = p.options ? ($('[data-opt][aria-pressed="true"]', root)?.dataset.opt || p.options.values[0].value) : null;
+    let qty = 1;
+
+    const show = (i) => {
+      idx = (i + p.images.length) % p.images.length;
+      thumbs.forEach((t, k) => { t.classList.toggle('is-active', k === idx); t.setAttribute('aria-selected', String(k === idx)); });
+      const old = $('img', main);
+      const next = document.createElement('div');
+      next.innerHTML = img(p.images[idx], `${p.title}, image ${idx + 1}`, { sizes: '(max-width: 900px) 100vw, 55vw', eager: true });
+      const im = next.firstElementChild;
+      main.insertBefore(im, $('.gallery__nav', main));
+      main.classList.remove('is-zoom');
+      if (reduced) { old.remove(); return; }
+      gsap.fromTo(im, { opacity: 0, scale: 1.06 }, { opacity: 1, scale: 1, duration: 0.9, ease: 'expo.out', onComplete: () => old.remove() });
+    };
+    thumbs.forEach((t) => t.addEventListener('click', () => show(+t.dataset.idx)));
+    $('#gPrev', root).addEventListener('click', (e) => { e.stopPropagation(); show(idx - 1); });
+    $('#gNext', root).addEventListener('click', (e) => { e.stopPropagation(); show(idx + 1); });
+    main.addEventListener('click', (e) => {
+      if (e.target.closest('.gallery__nav')) return;
+      const r = main.getBoundingClientRect();
+      $('img', main).style.transformOrigin = `${((e.clientX - r.left) / r.width) * 100}% ${((e.clientY - r.top) / r.height) * 100}%`;
+      main.classList.toggle('is-zoom');
+    });
+    main.addEventListener('pointermove', (e) => {
+      if (!main.classList.contains('is-zoom')) return;
+      const r = main.getBoundingClientRect();
+      $('img', main).style.transformOrigin = `${((e.clientX - r.left) / r.width) * 100}% ${((e.clientY - r.top) / r.height) * 100}%`;
+    });
+    main.addEventListener('pointerleave', () => main.classList.remove('is-zoom'));
+    const onKey = (e) => { if (e.key === 'ArrowRight' && document.activeElement?.closest('.gallery')) show(idx + 1); if (e.key === 'ArrowLeft' && document.activeElement?.closest('.gallery')) show(idx - 1); };
+    window.addEventListener('keydown', onKey);
+    cleanups.push(() => window.removeEventListener('keydown', onKey));
+
+    const syncStock = () => {
+      const out = variantOf(p, option)?.available === false;
+      ['#addBtn', '#stickyAdd'].forEach((sel) => { const b = $(sel, root); b.disabled = out; $('span', b).textContent = out ? 'Sold out' : 'Add to bag'; });
+    };
+    const updatePrice = () => {
+      const { price, compareAt } = priceOf(p, option);
+      $('#pPrice', root).innerHTML = `${compareAt ? `<s>${money(compareAt)}</s>` : ''}<span>${money(price)}</span>${compareAt ? `<span class="save">Save ${Math.round((1 - price / compareAt) * 100)}%</span>` : ''}`;
+      $('#stickyPrice', root).textContent = money(price * qty);
+    };
+    $$('[data-opt]', root).forEach((b) => b.addEventListener('click', () => {
+      option = b.dataset.opt;
+      $$('[data-opt]', root).forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+      $('#optName', root).textContent = option;
+      const v = variantOf(p, option);
+      if (v?.image) { const i = p.images.indexOf(v.image); if (i >= 0 && i !== idx) show(i); }
+      history.replaceState(null, '', `#/product/${p.handle}?${p.options.type === 'colour' ? 'colour' : 'size'}=${encodeURIComponent(option)}`);
+      updatePrice();
+      syncStock();
+    }));
+    $$('[data-q]', root).forEach((b) => b.addEventListener('click', () => { qty = Math.max(1, Math.min(20, qty + +b.dataset.q)); $('#qty', root).textContent = qty; updatePrice(); }));
+    const add = () => addToCart(p.handle, option, qty, $('img', main));
+    $('#addBtn', root).addEventListener('click', add);
+    $('#stickyAdd', root).addEventListener('click', add);
+
+    const bar = $('#stickyBuy', root);
+    ScrollTrigger.create({
+      trigger: $('#buy', root), start: 'bottom top+=80', endTrigger: document.getElementById('footer'), end: 'top bottom',
+      onToggle: (self) => { bar.classList.toggle('is-visible', self.isActive); bar.setAttribute('aria-hidden', String(!self.isActive)); $('#stickyAdd', root).tabIndex = self.isActive ? 0 : -1; },
+    });
+    updatePrice();
+    syncStock();
+  };
+
+  Controllers.faq = (root) => {
+    $$('[data-scroll]', root).forEach((b) => b.addEventListener('click', () => scrollTo(b.dataset.scroll, { offset: -120 })));
+  };
+
+  Controllers.contact = (root) => {
+    const form = $('#contactForm', root);
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      let ok = true;
+      $$('.field', form).forEach((f) => {
+        const input = $('input, textarea', f); const small = $('small', f);
+        if (!input.required) return;
+        const valid = input.type === 'email' ? /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.value.trim()) : input.value.trim().length > 1;
+        small.textContent = valid ? '' : (input.type === 'email' ? 'Please enter a valid email address.' : 'This field is required.');
+        small.classList.toggle('is-error', !valid);
+        input.setAttribute('aria-invalid', String(!valid));
+        if (!valid && ok) { input.focus(); ok = false; }
+      });
+      if (!ok) return;
+      const name = esc($('#cName', form).value.trim().split(' ')[0]);
+      gsap.to(form, { opacity: 0, y: 20, duration: reduced ? 0 : 0.4, onComplete: () => {
+        form.innerHTML = `<div style="display:grid;gap:1rem;padding:1rem 0"><h2 class="h-lg" style="color:var(--ink)">Thank you, ${name}.</h2><p style="color:var(--ink-muted)">Your message is on its way. We will reply to the email you gave us.</p></div>`;
+        gsap.to(form, { opacity: 1, y: 0, duration: reduced ? 0 : 0.8 });
+      } });
+    });
+  };
+
+  /* =====================================================================
+     GLOBAL UI
+     ===================================================================== */
+  // Announcement rotator
+  (() => {
+    const items = $$('#announce p');
+    let i = 0;
+    if (reduced || items.length < 2) return;
+    setInterval(() => {
+      const cur = items[i]; i = (i + 1) % items.length; const nxt = items[i];
+      cur.classList.remove('is-active'); cur.classList.add('is-leaving');
+      nxt.classList.remove('is-leaving'); nxt.classList.add('is-active');
+      setTimeout(() => cur.classList.remove('is-leaving'), 900);
+    }, 4200);
+  })();
+
+  // Header: floats away on scroll down, returns on scroll up
+  const header = $('#header');
+  ScrollTrigger.create({
+    start: 0, end: 'max',
+    onUpdate: (self) => {
+      const y = self.scroll();
+      header.classList.toggle('is-scrolled', y > 40);
+      const hide = y > 400 && self.direction === 1 && $('#mega').hidden && $('#menu').hidden;
+      header.classList.toggle('is-hidden', hide);
+    },
+  });
+
+  // Mega menu
+  const megaBtn = $('.nav__mega-btn');
+  const mega = $('#mega');
+  $('#megaInner').innerHTML = COLLECTIONS.map((c) => `<a class="mega__card" href="#/shop/${c.handle}" data-link>${img(c.image, `${c.title} collection`, { sizes: '22vw' })}<span>${c.title}</span></a>`).join('');
+  const setMega = (open) => {
+    megaBtn.setAttribute('aria-expanded', String(open));
+    if (open) {
+      mega.hidden = false;
+      if (!reduced) gsap.fromTo('.mega__card', { y: 30, opacity: 0 }, { y: 0, opacity: 1, duration: 0.8, stagger: 0.06, ease: 'expo.out' });
+    } else mega.hidden = true;
+  };
+  megaBtn.addEventListener('click', (e) => { e.stopPropagation(); setMega(mega.hidden); });
+  document.addEventListener('click', (e) => { if (!mega.hidden && !e.target.closest('#mega')) setMega(false); });
+
+  // Mobile menu
+  const burger = $('#burger');
+  const menu = $('#menu');
+  const setMenu = (open) => {
+    burger.setAttribute('aria-expanded', String(open));
+    burger.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+    lockScroll(open);
+    if (open) {
+      menu.hidden = false;
+      if (!reduced) {
+        gsap.fromTo(menu, { clipPath: 'inset(0 0 100% 0)' }, { clipPath: 'inset(0 0 0% 0)', duration: 0.9, ease: 'expo.inOut' });
+        gsap.fromTo('.menu__nav a', { yPercent: 100, opacity: 0 }, { yPercent: 0, opacity: 1, duration: 0.9, stagger: 0.05, delay: 0.3, ease: 'expo.out' });
+      }
+    } else if (!reduced) {
+      gsap.to(menu, { clipPath: 'inset(0 0 100% 0)', duration: 0.7, ease: 'expo.inOut', onComplete: () => { menu.hidden = true; } });
+    } else menu.hidden = true;
+  };
+  burger.addEventListener('click', () => setMenu(menu.hidden));
+
+  // Cart drawer
+  const drawer = $('#drawer');
+  const scrim = $('#scrim');
+  let lastFocus = null;
+  function openDrawer() {
+    if (drawer.classList.contains('is-open')) return;
+    lastFocus = document.activeElement;
+    drawer.classList.add('is-open');
+    drawer.setAttribute('aria-hidden', 'false');
+    scrim.hidden = false;
+    lockScroll(true);
+    gsap.set(drawer, { visibility: 'visible' });
+    gsap.to(scrim, { opacity: 1, duration: reduced ? 0 : 0.5 });
+    gsap.to(drawer, { xPercent: 0, duration: reduced ? 0 : 0.9, ease: 'expo.out' });
+    if (!reduced) gsap.from('#drawerBody > *', { x: 40, opacity: 0, duration: 0.8, stagger: 0.06, delay: 0.2, ease: 'expo.out' });
+    setTimeout(() => $('#drawerClose').focus(), 50);
+  }
+  function closeDrawer() {
+    if (!drawer.classList.contains('is-open')) return;
+    drawer.classList.remove('is-open');
+    drawer.setAttribute('aria-hidden', 'true');
+    gsap.to(scrim, { opacity: 0, duration: reduced ? 0 : 0.4, onComplete: () => { scrim.hidden = true; } });
+    gsap.to(drawer, { xPercent: 100, duration: reduced ? 0 : 0.7, ease: 'expo.inOut', onComplete: () => gsap.set(drawer, { visibility: 'hidden' }) });
+    lockScroll(false);
+    lastFocus?.focus?.();
+  }
+  $('#cartBtn').addEventListener('click', openDrawer);
+  $('#drawerClose').addEventListener('click', closeDrawer);
+  scrim.addEventListener('click', closeDrawer);
+
+  function bumpCount() {
+    const c = $('#cartCount');
+    if (!reduced) gsap.fromTo(c, { scale: 1.6 }, { scale: 1, duration: 0.8, ease: 'elastic.out(1, 0.4)', clearProps: 'transform' });
+  }
+  function flyToCart(fromEl, done) {
+    const r = fromEl.getBoundingClientRect();
+    const target = $('#cartBtn').getBoundingClientRect();
+    const clone = document.createElement('img');
+    clone.src = fromEl.currentSrc || fromEl.src;
+    clone.className = 'fly';
+    const size = Math.min(r.width, 220);
+    Object.assign(clone.style, { width: `${size}px`, height: `${size}px`, left: `${r.left + r.width / 2 - size / 2}px`, top: `${r.top + r.height / 2 - size / 2}px` });
+    document.body.appendChild(clone);
+    const dx = target.left + target.width / 2 - (r.left + r.width / 2);
+    const dy = target.top + target.height / 2 - (r.top + r.height / 2);
+    gsap.timeline({ onComplete: () => { clone.remove(); bumpCount(); done(); } })
+      .to(clone, { scale: 0.85, duration: 0.25, ease: 'power2.out' })
+      .to(clone, { x: dx, duration: 0.85, ease: 'power3.inOut' }, 0.15)
+      .to(clone, { y: dy, duration: 0.85, ease: 'back.in(1.4)' }, 0.15)
+      .to(clone, { scale: 0.08, borderRadius: '50%', opacity: 0.6, duration: 0.85, ease: 'power3.in' }, 0.15);
+  }
+
+  function renderCart() {
+    const count = itemCount();
+    const cc = $('#cartCount');
+    cc.textContent = count;
+    cc.classList.toggle('has-items', count > 0);
+    $('#cartBtn').setAttribute('aria-label', `Open bag, ${count} ${count === 1 ? 'item' : 'items'}`);
+    const sub = subtotal();
+    const left = Math.max(0, CONFIG.freeShippingFrom - sub);
+    $('#drawerShip').innerHTML = count ? `
+      <p>${left > 0 ? `You are <b>${money(left)}</b> away from free shipping.` : '<b>Your order ships free.</b>'}</p>
+      <div class="ship-bar" role="progressbar" aria-valuemin="0" aria-valuemax="${CONFIG.freeShippingFrom}" aria-valuenow="${Math.min(sub, CONFIG.freeShippingFrom).toFixed(2)}" aria-label="Progress to free shipping"><span style="transform:scaleX(${Math.min(1, sub / CONFIG.freeShippingFrom)})"></span></div>` : '';
+    $('#drawerShip').hidden = !count;
+    const body = $('#drawerBody');
+    if (!count) {
+      body.innerHTML = `<div class="drawer-empty">${ic('bag')}<h3>Your bag is empty</h3><p>Everything has a place. Let us find yours.</p><a class="btn btn--dark" href="#/shop" data-link><span>Shop the collection</span><span class="btn__dot">${ic('arrow')}</span></a></div>`;
+      $('#drawerFoot').innerHTML = '';
+      return;
+    }
+    body.innerHTML = cart.map((l) => {
+      const p = byHandle(l.handle);
+      const v = variantOf(p, l.option);
+      const pic = v?.image && v.image.startsWith('crop-') ? v.image : p.card;
+      return `<div class="line">
+        <img src="assets/img/${pic}-sm.webp" alt="${esc(p.title)}">
+        <div>
+          <p class="line__t">${esc(p.title)}</p>
+          ${l.option ? `<p class="line__v">${esc(p.options.name)}: ${esc(l.option)}</p>` : ''}
+          <div class="qty" role="group" aria-label="Quantity for ${esc(p.title)}"><button data-line="${esc(l.key)}" data-d="-1" aria-label="Decrease">${ic('minus')}</button><output>${l.qty}</output><button data-line="${esc(l.key)}" data-d="1" aria-label="Increase">${ic('plus')}</button></div>
+        </div>
+        <div class="line__side"><span>${money(lineTotal(l))}</span><button class="line__rm" data-rm="${esc(l.key)}">Remove</button></div>
+      </div>`;
+    }).join('');
+    const upsell = PRODUCTS.filter((p) => !cart.some((l) => l.handle === p.handle)).sort((a, b) => a.price - b.price)[0];
+    if (upsell) body.insertAdjacentHTML('beforeend', `<div class="upsell"><img src="assets/img/${upsell.card}-sm.webp" alt=""><div><b>${esc(upsell.title)}</b><span>${upsell.options?.type === 'size' ? fromPrice(upsell) : `Add for ${money(upsell.price)}`}</span></div><button data-upsell="${upsell.handle}" aria-label="Add ${esc(upsell.title)} to bag">${ic('plus')}</button></div>`);
+    const shipping = sub >= CONFIG.freeShippingFrom ? 0 : CONFIG.shippingCost;
+    $('#drawerFoot').innerHTML = `
+      <div class="drawer__row"><span>Subtotal</span><span>${money(sub)}</span></div>
+      <div class="drawer__row"><span>Shipping</span><span>${shipping ? money(shipping) : 'Free'}</span></div>
+      <div class="drawer__row total"><span>Total</span><span>${money(sub + shipping)}</span></div>
+      <button class="btn btn--dark btn--block" id="checkoutBtn"><span>Checkout</span><span class="btn__dot">${ic('lock')}</span></button>
+      <p class="drawer__note">Prices include VAT. Secure checkout.</p>`;
+  }
+  $('#drawer').addEventListener('click', (e) => {
+    const d = e.target.closest('[data-d]');
+    if (d) { const l = cart.find((x) => x.key === d.dataset.line); if (l) setQty(l.key, l.qty + +d.dataset.d); return; }
+    const rm = e.target.closest('[data-rm]');
+    if (rm) { const row = rm.closest('.line'); gsap.to(row, { x: 60, opacity: 0, duration: reduced ? 0 : 0.4, onComplete: () => setQty(rm.dataset.rm, 0) }); return; }
+    const up = e.target.closest('[data-upsell]');
+    if (up) { addToCart(up.dataset.upsell); toast('Added to your bag'); return; }
+    if (e.target.closest('#checkoutBtn')) { $('#modal').hidden = false; $('#modalClose').focus(); return; }
+    if (e.target.closest('[data-link]')) closeDrawer();
+  });
+  $('#modalClose').addEventListener('click', () => { $('#modal').hidden = true; });
+
+  // Quick add (delegated)
+  document.addEventListener('click', (e) => {
+    const q = e.target.closest('[data-quick]');
+    if (!q) return;
+    e.preventDefault();
+    const card = q.closest('.pcard');
+    addToCart(q.dataset.quick, null, 1, $('.pcard__media img', card));
+  });
+
+  // Search
+  const search = $('#search');
+  const sInput = $('#searchInput');
+  const sResults = $('#searchResults');
+  const drawResults = () => {
+    const q = sInput.value.trim().toLowerCase();
+    if (!q) {
+      sResults.innerHTML = `<p class="search__hint">Popular spaces</p>${COLLECTIONS.map((c) => `<a class="sres" href="#/shop/${c.handle}" data-link><img src="assets/img/${c.image}-sm.webp" alt=""><div><b>${c.title}</b><span>${esc(c.blurb)}</span></div>${ic('arrow')}</a>`).join('')}`;
+      return;
+    }
+    const hits = PRODUCTS.filter((p) => [p.title, p.subtitle, p.collection, p.short, ...p.highlights].join(' ').toLowerCase().includes(q));
+    sResults.innerHTML = hits.length
+      ? hits.map((p) => `<a class="sres" href="#/product/${p.handle}" data-link><img src="assets/img/${p.card}-sm.webp" alt=""><div><b>${esc(p.title)}</b><span>${esc(p.subtitle)}</span></div><span class="price">${fromPrice(p)}</span></a>`).join('')
+      : `<p class="search__hint">No results for “${esc(sInput.value)}”. Try “bag”, “drawer” or “suede”.</p>`;
+    if (!reduced) gsap.from($$('.sres', sResults), { y: 16, opacity: 0, duration: 0.5, stagger: 0.04, ease: 'expo.out' });
+  };
+  const setSearch = (open) => {
+    if (open) {
+      lastFocus = document.activeElement;
+      search.hidden = false; lockScroll(true); drawResults();
+      if (!reduced) gsap.fromTo('.search__panel', { y: -30, opacity: 0 }, { y: 0, opacity: 1, duration: 0.7, ease: 'expo.out' });
+      setTimeout(() => sInput.focus(), 30);
+    } else { search.hidden = true; lockScroll(false); lastFocus?.focus?.(); }
+  };
+  $('#searchBtn').addEventListener('click', () => setSearch(true));
+  $('#searchClose').addEventListener('click', () => setSearch(false));
+  search.addEventListener('click', (e) => { if (e.target === search) setSearch(false); if (e.target.closest('[data-link]')) setSearch(false); });
+  sInput.addEventListener('input', drawResults);
+
+  // Escape closes any layer
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (!$('#modal').hidden) { $('#modal').hidden = true; return; }
+    if (!search.hidden) return setSearch(false);
+    if (drawer.classList.contains('is-open')) return closeDrawer();
+    if (!menu.hidden) return setMenu(false);
+    if (!mega.hidden) return setMega(false);
+  });
+
+  /* =====================================================================
+     ROUTER
+     ===================================================================== */
+  let pageCtx = null;
+  let cleanups = [];
+  let matchMedias = [];
+  let firstRender = true;
+  let resolveIntro;
+  const intro = new Promise((r) => { resolveIntro = r; });
+
+  const parse = () => {
+    const raw = location.hash.startsWith('#/') ? location.hash.slice(1) : '/';
+    const [path, qs] = raw.split('?');
+    const parts = path.split('/').filter(Boolean);
+    const query = new URLSearchParams(qs || '');
+    if (!parts.length) return { name: 'home', params: {}, query };
+    if (parts[0] === 'shop') return { name: 'shop', params: { collection: parts[1] }, query };
+    if (parts[0] === 'product') return { name: 'product', params: { handle: parts[1], query }, query };
+    if (['about', 'faq', 'contact'].includes(parts[0])) return { name: parts[0], params: {}, query };
+    if (parts[0] === 'policy') return { name: 'policy', params: { id: parts[1] }, query };
+    return { name: 'notFound', params: {}, query };
+  };
+  const titles = { home: 'Tidely | Everything in its place', about: 'Our story | Tidely', faq: 'Help | Tidely', contact: 'Contact | Tidely', notFound: 'Page not found | Tidely' };
+
+  function mount(route) {
+    // teardown previous page
+    cleanups.forEach((fn) => fn()); cleanups = [];
+    matchMedias.forEach((m) => m.revert()); matchMedias = [];
+    pageCtx?.revert();
+    const main = $('#main');
+    main.innerHTML = Pages[route.name](route.params);
+    hydrateIcons(main);
+    // document title
+    if (route.name === 'product') { const p = byHandle(route.params.handle); document.title = p ? `${p.title} | Tidely` : titles.notFound; }
+    else if (route.name === 'shop') { const c = collectionOf(route.params.collection); document.title = `${c ? c.title : 'Shop all'} | Tidely`; }
+    else if (route.name === 'policy') document.title = `${(POLICIES[route.params.id] || {}).title || 'Policy'} | Tidely`;
+    else document.title = titles[route.name] || 'Tidely';
+    // nav current state
+    $$('.nav__links a').forEach((a) => a.classList.toggle('is-current', a.getAttribute('href') === `#/${route.name === 'shop' ? 'shop' : route.name}`));
+    pageCtx = gsap.context(() => {
+      splitHeadings(main);
+      reveals(main);
+      magnetic(main);
+      accordions(main);
+      Controllers[route.name]?.(main, { params: route.params, intro: firstRender ? intro : Promise.resolve() });
+    }, main);
+    requestAnimationFrame(() => ScrollTrigger.refresh());
+  }
+
+  async function navigate() {
+    const route = parse();
+    if (!location.hash.startsWith('#/') && location.hash && !firstRender) return; // in-page anchors (skip link)
+    setMega(false);
+    if (!menu.hidden) setMenu(false);
+    if (drawer.classList.contains('is-open')) closeDrawer();
+    if (firstRender || reduced) {
+      mount(route);
+      if (!firstRender) window.scrollTo(0, 0);
+      firstRender = false;
+      return;
+    }
+    const curtain = $('#curtain');
+    const mark = $('.curtain__mark', curtain);
+    await gsap.timeline()
+      .set(curtain, { y: 0, yPercent: 100, pointerEvents: 'auto' })
+      .to(curtain, { yPercent: 0, duration: 0.7, ease: 'tidelyInOut' })
+      .to(mark, { opacity: 1, duration: 0.3 }, '-=0.3');
+    if (lenis) lenis.scrollTo(0, { immediate: true }); else window.scrollTo(0, 0);
+    mount(route);
+    $('#main').focus({ preventScroll: true });
+    await gsap.timeline()
+      .to(mark, { opacity: 0, duration: 0.2 })
+      .to(curtain, { yPercent: -100, duration: 0.8, ease: 'tidelyInOut' })
+      .set(curtain, { yPercent: 100, pointerEvents: 'none' });
+  }
+
+  // Keep in-page anchor links (like the skip link) from being treated as routes
+  document.addEventListener('click', (e) => {
+    const a = e.target.closest('a[href^="#"]');
+    if (!a) return;
+    const href = a.getAttribute('href');
+    if (!href.startsWith('#/')) { e.preventDefault(); const t = $(href); if (t) { t.focus?.(); scrollTo(href); } }
+    else if (href === location.hash) { e.preventDefault(); scrollTo(0); }
+  });
+  window.addEventListener('hashchange', navigate);
+
+  /* =====================================================================
+     BOOT
+     ===================================================================== */
+  function footerAnimation() {
+    if (reduced) return;
+    gsap.from('#footerWord span', { yPercent: 100, duration: 1.4, stagger: 0.07, ease: 'expo.out', scrollTrigger: { trigger: '#footerWord', start: 'top 95%', toggleActions: 'play none none reverse' } });
+  }
+
+  function runIntro() {
+    const pre = $('#preloader');
+    let seen = false;
+    try { seen = !!sessionStorage.getItem('tidely-intro'); } catch (e) { /* ignore */ }
+    if (reduced || seen || document.documentElement.classList.contains('no-intro')) { pre.remove(); resolveIntro(); return; }
+    try { sessionStorage.setItem('tidely-intro', '1'); } catch (e) { /* ignore */ }
+    lockScroll(true);
+    const letters = $$('.preloader__word span', pre);
+    gsap.timeline({ onComplete: () => { pre.remove(); lockScroll(false); } })
+      .from(letters, { yPercent: 120, duration: 1.1, stagger: 0.07, ease: 'expo.out' })
+      .to('.preloader__rule', { scaleX: 1, duration: 1.1, ease: 'expo.inOut' }, 0.3)
+      .from('.preloader__tag', { opacity: 0, y: 10, duration: 0.8 }, 0.7)
+      .to(letters, { yPercent: -120, duration: 0.8, stagger: 0.04, ease: 'expo.in' }, '+=0.35')
+      .to(['.preloader__rule', '.preloader__tag'], { opacity: 0, duration: 0.4 }, '<')
+      .to(pre, { clipPath: 'inset(0 0 100% 0)', duration: 1.1, ease: 'expo.inOut' }, '-=0.25')
+      .add(() => resolveIntro(), '-=0.7');
+  }
+
+  async function boot() {
+    hydrateIcons(document);
+    gsap.set('#drawer', { x: 0, xPercent: 100 });
+    gsap.set('#curtain', { y: 0, yPercent: 100 });
+    renderFooter();
+    hydrateIcons($('#footer'));
+    renderCart();
+    try { await Promise.race([document.fonts.ready, new Promise((r) => setTimeout(r, 1500))]); } catch (e) { /* ignore */ }
+    navigate();
+    footerAnimation();
+    runIntro();
+  }
+  boot();
+})();
