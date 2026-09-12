@@ -83,7 +83,7 @@
     saveCart();
     renderCart();
     const openAfter = () => openDrawer();
-    if (fromEl && !reduced) flyToCart(fromEl, openAfter); else { bumpCount(); openAfter(); }
+    if (fromEl && !reduced && !document.hidden) flyToCart(fromEl, openAfter); else { bumpCount(); openAfter(); }
   }
   function setQty(key, qty) {
     const line = cart.find((l) => l.key === key);
@@ -1227,15 +1227,27 @@
     requestAnimationFrame(() => ScrollTrigger.refresh());
   }
 
+  let navBusy = false;
+  let navPending = false;
   async function navigate() {
-    const route = parse();
     if (!location.hash.startsWith('#/') && location.hash && !firstRender) return; // in-page anchors (skip link)
+    // One transition at a time: a click during a transition queues the latest route.
+    if (navBusy) { navPending = true; return; }
+    navBusy = true;
+    try { await transitionTo(parse()); } finally {
+      navBusy = false;
+      if (navPending) { navPending = false; navigate(); }
+    }
+  }
+
+  async function transitionTo(route) {
     setMega(false);
     if (!menu.hidden) setMenu(false);
     if (drawer.classList.contains('is-open')) closeDrawer();
-    if (firstRender || reduced) {
+    // Hidden tabs pause requestAnimationFrame, so skip the curtain there.
+    if (firstRender || reduced || document.hidden) {
+      if (!firstRender) { if (lenis) lenis.scrollTo(0, { immediate: true }); else window.scrollTo(0, 0); }
       mount(route);
-      if (!firstRender) window.scrollTo(0, 0);
       firstRender = false;
       return;
     }
