@@ -1,0 +1,17 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "rewrites": [
+    {
+      "source": "/",
+      "destination": "/tidely-web/index.html"
+    },
+    {
+      "source": "/assets/:path*",
+      "destination": "/tidely-web/assets/:path*"
+    },
+    {
+      "source": "/favicon.ico",
+      "destination": "/tidely-web/assets/favicon.svg"
+    }
+  ]
+}
