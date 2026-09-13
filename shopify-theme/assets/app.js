@@ -17,14 +17,26 @@
   // Present only when the page is served by the Shopify theme (see snippets/tidely-data.liquid).
   const SHOP = window.TIDELY_SHOP || null;
   const FEATURED = window.TIDELY_FEATURED || [];
-  const rank = (p) => { const i = FEATURED.indexOf(p.handle); return i < 0 ? 999 : i; };
+  const rank = (p) => { const i = FEATURED.indexOf(p.metaHandle || p.handle); return i < 0 ? 999 : i; };
   const META = window.TIDELY_PRODUCTS;
   const stripTags = (h) => String(h || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
   const cdn = (u) => (u && u.startsWith('//') ? `https:${u}` : u);
 
+  // Loose text match for handles, tags, titles and variant names ("Gray" = "grey", "Set of 2" = "set-of-2").
+  const norm = (x) => String(x || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+  // A Shopify product gets the Tidely design when its handle, a "tidely:<handle>" tag or its title matches products.js.
+  // This keeps the design when products are imported with DSers under AliExpress handles.
+  const metaFor = (sp) => META.find((m) => m.handle === sp.handle)
+    || META.find((m) => (sp.tags || []).some((t) => norm(t) === norm(`tidely ${m.handle}`)))
+    || META.find((m) => norm(m.title) === norm(sp.title));
+  const variantMatches = (val, v) => {
+    const hay = ` ${norm(v.options.join(' '))} `;
+    return [val.value, ...(val.aliases || [])].some((a) => hay.includes(` ${norm(a)} `));
+  };
+
   // Merge a Shopify product (live price, variants, stock) with the design data kept in products.js.
   function fromShop(sp) {
-    const meta = META.find((m) => m.handle === sp.handle);
+    const meta = metaFor(sp);
     const imgs = (sp.images || []).map(cdn);
     const variants = (sp.variants || []).map((v) => ({
       id: v.id,
@@ -49,7 +61,9 @@
       inBox: [],
       care: '',
     };
-    p.title = sp.title;
+    p.metaHandle = meta ? meta.handle : null;
+    p.handle = sp.handle; // links always use the store's real URL
+    p.title = meta ? meta.title : sp.title;
     p.price = first.price;
     p.compareAt = first.compareAt;
     p.variantId = first.id;
@@ -59,7 +73,7 @@
       p.options = {
         ...p.options,
         values: p.options.values.map((val) => {
-          const v = variants.find((x) => x.options[0] === val.value);
+          const v = variants.find((x) => variantMatches(val, x));
           return v ? { ...val, price: v.price, compareAt: v.compareAt, available: v.available, variantId: v.id } : { ...val, available: false };
         }),
       };
@@ -122,7 +136,10 @@
   }
   const img = (name, alt, { sizes = '(max-width: 767px) 100vw, 50vw', cls = '', eager = false } = {}) =>
     `<img class="${cls}" src="${src(name)}" srcset="${srcset(name)}" sizes="${sizes}" alt="${esc(alt)}" ${eager ? 'fetchpriority="high"' : 'loading="lazy"'} decoding="async">`;
-  const byHandle = (h) => PRODUCTS.find((p) => p.handle === h);
+  const byHandle = (h) => PRODUCTS.find((p) => p.handle === h || p.metaHandle === h);
+  // Editorial sections keep their design content even before a product is imported into the store.
+  const anyProduct = (h) => byHandle(h) || META.find((m) => m.handle === h);
+  const plink = (h) => (byHandle(h) ? `#/product/${byHandle(h).handle}` : '#/shop');
   const collectionOf = (h) => COLLECTIONS.find((c) => c.handle === h);
 
   const hydrateIcons = (root = document) => $$('i[data-icon]', root).forEach((el) => { if (!el.firstElementChild) el.innerHTML = icon(el.dataset.icon); });
@@ -294,7 +311,7 @@
   ];
 
   Pages.home = () => {
-    const first = byHandle(HERO_SLIDES[0].handle);
+    const first = anyProduct(HERO_SLIDES[0].handle);
     const service = [
       { icon: 'truck', title: `Free shipping over ${money(CONFIG.freeShippingFrom)}`, text: `Orders under ${money(CONFIG.freeShippingFrom)} ship for ${money(CONFIG.shippingCost)}.` },
       { icon: 'returns', title: `${CONFIG.returnDays}-day returns`, text: 'Changed your mind? Send it back.' },
@@ -326,13 +343,13 @@
             <div class="hshow__arch">
               ${HERO_SLIDES.map((s, i) => `<figure class="hshow__slide" data-i="${i}"${i ? ' aria-hidden="true"' : ''}><img src="${src(s.image)}" srcset="${srcset(s.image)}" sizes="(max-width: 900px) 80vw, 36vw" alt="${esc(s.alt)}" style="object-position:${s.pos}" ${i === 0 ? 'fetchpriority="high"' : ''} decoding="async"></figure>`).join('')}
             </div>
-            <a class="hshow__card" id="hCard" href="#/product/${first.handle}" data-link>
+            <a class="hshow__card" id="hCard" href="${plink(HERO_SLIDES[0].handle)}" data-link>
               <span class="hshow__line"><span class="hshow__cat" id="hCat">${collectionOf(first.collection).title}</span></span>
               <span class="hshow__line"><span class="hshow__name" id="hName">${esc(first.title)}</span></span>
-              <span class="hshow__foot"><span class="hshow__line"><span class="price" id="hPrice">${fromPrice(first)}</span></span><span class="hshow__go">${icon('arrowUp')}</span></span>
+              <span class="hshow__foot"><span class="hshow__line"><span class="price" id="hPrice">${byHandle(first.handle) ? fromPrice(first) : 'View collection'}</span></span><span class="hshow__go">${icon('arrowUp')}</span></span>
             </a>
             <div class="hshow__bars" role="tablist" aria-label="Featured products">
-              ${HERO_SLIDES.map((s, i) => `<button role="tab" aria-selected="${i === 0}" aria-label="Show ${esc(byHandle(s.handle).title)}" data-go="${i}"><span><i></i></span></button>`).join('')}
+              ${HERO_SLIDES.map((s, i) => `<button role="tab" aria-selected="${i === 0}" aria-label="Show ${esc(anyProduct(s.handle).title)}" data-go="${i}"><span><i></i></span></button>`).join('')}
             </div>
           </div>
         </div>
@@ -400,7 +417,7 @@
           <ul class="features" data-reveal>
             ${ANATOMY.map((a, i) => `<li class="feature${i === 0 ? ' is-active' : ''}"><button class="feature__btn" data-spot="${i}" aria-expanded="${i === 0}">${esc(a.title)}</button><div class="feature__more"><p>${esc(a.text)}</p></div></li>`).join('')}
           </ul>
-          <div class="anatomy__buy" data-reveal>${btn('Shop the snack organizer', '#/product/airtight-snack-organizer', 'solid', 'data-magnetic')}<span class="price">${money(byHandle('airtight-snack-organizer').price)}</span></div>
+          <div class="anatomy__buy" data-reveal>${btn('Shop the snack organizer', plink('airtight-snack-organizer'), 'solid', 'data-magnetic')}${byHandle('airtight-snack-organizer') ? `<span class="price">${money(byHandle('airtight-snack-organizer').price)}</span>` : ''}</div>
         </div>
       </div>
     </section>
@@ -426,7 +443,7 @@
               <span class="stack__icon">${ic(s.icon)}</span>
               <h3 class="h-lg">${s.title}</h3>
               <p>${s.text}</p>
-              <a class="link-underline" href="#/product/${s.link}" data-link>${esc(byHandle(s.link).title)} ${ic('arrow')}</a>
+              <a class="link-underline" href="${plink(s.link)}" data-link>${esc(anyProduct(s.link).title)} ${ic('arrow')}</a>
             </div>
           </div>
         </div>`).join('')}
@@ -451,7 +468,7 @@
             <li><span class="n">ii</span><div><b>Protective cover</b><span>Snaps on so the brush stays clean in a bag.</span></div></li>
             <li><span class="n">iii</span><div><b>Rubber cleaning pad</b><span>Lifts stubborn marks and restores the nap.</span></div></li>
           </ul>
-          <div data-reveal>${btn('Shop the suede kit', '#/product/suede-care-kit', 'solid', 'data-magnetic')}</div>
+          <div data-reveal>${btn('Shop the suede kit', plink('suede-care-kit'), 'solid', 'data-magnetic')}</div>
         </div>
       </div>
     </section>
@@ -517,7 +534,7 @@
   Pages.product = ({ handle, query }) => {
     const p = byHandle(handle);
     if (!p) return Pages.notFound();
-    const c = collectionOf(p.collection);
+    const c = collectionOf(p.collection) || { handle: '', title: 'Shop all' };
     const selected = variantOf(p, query.get('colour') || query.get('size'))?.value || null;
     const start = selected && p.options?.values.find((v) => v.value === selected)?.image;
     const startIdx = start ? Math.max(0, p.images.indexOf(start)) : 0;
@@ -826,7 +843,7 @@
     const slides = $$('.hshow__slide', show);
     const bars = $$('.hshow__bars button', show);
     const fills = bars.map((b) => b.querySelector('i'));
-    const heroProducts = HERO_SLIDES.map((s) => byHandle(s.handle));
+    const heroProducts = HERO_SLIDES.map((s) => anyProduct(s.handle));
     const DWELL = 5.5;
     let cur = 0;
     let progress = null;
@@ -875,8 +892,8 @@
       const cat = collectionOf(p.collection).title;
       swapText($('#hCat', show), cat);
       swapText($('#hName', show), p.title);
-      swapText($('#hPrice', show), fromPrice(p));
-      $('#hCard', show).setAttribute('href', link(`#/product/${p.handle}`));
+      swapText($('#hPrice', show), byHandle(HERO_SLIDES[n].handle) ? fromPrice(p) : 'View collection');
+      $('#hCard', show).setAttribute('href', link(plink(HERO_SLIDES[n].handle)));
       cur = n;
       setFills();
       startProgress();
@@ -1370,7 +1387,7 @@
         <img src="${srcSm(pic)}" alt="${esc(p.title)}">
         <div>
           <p class="line__t">${esc(p.title)}</p>
-          ${l.option ? `<p class="line__v">${esc(p.options?.name || 'Option')}: ${esc(l.option)}</p>` : ''}
+          ${l.option ? `<p class="line__v">${esc(p.options?.name || 'Option')}: ${esc(p.options?.values.find((val) => val.value === l.option || variantMatches(val, { options: [l.option] }))?.value || l.option)}</p>` : ''}
           <div class="qty" role="group" aria-label="Quantity for ${esc(p.title)}"><button data-line="${esc(l.key)}" data-d="-1" aria-label="Decrease">${ic('minus')}</button><output>${l.qty}</output><button data-line="${esc(l.key)}" data-d="1" aria-label="Increase">${ic('plus')}</button></div>
         </div>
         <div class="line__side"><span>${money(lineTotal(l))}</span><button class="line__rm" data-rm="${esc(l.key)}">Remove</button></div>
