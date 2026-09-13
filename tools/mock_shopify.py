@@ -16,10 +16,10 @@ THEME = os.path.join(ROOT, 'shopify-theme')
 PRODUCTS = json.load(open(os.path.join(ROOT, 'tools', 'mock_products.json'), encoding='utf-8'))
 VARIANTS = {v['id']: (p, v) for p in PRODUCTS for v in p['variants']}
 MEMBERSHIP = {
-    'care': ['portable-garment-steamer', 'drawer-organizer-17-grid', 'under-bed-storage-bag', 'suede-care-kit'],
-    'organize': ['airtight-snack-organizer', 'two-tier-under-sink-organizer', 'olive-oil-sprayer', 'six-tier-plant-stand'],
-    'pet-home': ['steam-pet-grooming-brush'],
     'travel': ['stand-up-mesh-vanity-bag', 'double-layer-tech-organizer'],
+    'care': ['drawer-organizer-17-grid', 'under-bed-storage-bag', 'suede-care-kit', 'portable-garment-steamer', 'clear-top-under-bed-bag', 'low-profile-under-bed-box', 'toilet-care-light', 'expandable-drawer-organizer', 'reusable-lint-roller', 'window-cleaning-robot'],
+    'organize': ['airtight-snack-organizer', 'two-tier-under-sink-organizer', 'olive-oil-sprayer', 'six-tier-plant-stand', 'bamboo-cable-management-box', 'three-tier-spice-rack', 'oil-sprayer-and-pourer', 'rotating-kitchen-organizer', 'magnetic-door-stopper'],
+    'pet-home': ['steam-pet-grooming-brush', 'wireless-cat-water-fountain'],
 }
 CART = []  # [{key, variant_id, quantity}]
 
