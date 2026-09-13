@@ -150,8 +150,18 @@
   const Pages = {};
 
   /* ---------- Home ---------- */
+  // Hero showcase: one product from each corner of the catalogue.
+  const HERO_SLIDES = [
+    { handle: 'portable-garment-steamer', image: 'hero-steamer', pos: '50% 40%', alt: 'Black handheld garment steamer releasing a cloud of steam' },
+    { handle: 'six-tier-plant-stand', image: 'hero-plant', pos: '50% 42%', alt: 'Black six-tier plant stand filled with trailing plants, books and a woven basket' },
+    { handle: 'steam-pet-grooming-brush', image: 'hero-pet', pos: '50% 50%', alt: 'Sage green pet brush with orange silicone bristles releasing a fine mist' },
+    { handle: 'olive-oil-sprayer', image: 'crop-olive-green', pos: '50% 55%', alt: 'Brushed stainless steel oil sprayer on a forest green background' },
+    { handle: 'airtight-snack-organizer', image: 'crop-snack-top', pos: '50% 50%', alt: 'Snack organizer filled with nuts, olives, dried fruit, crackers and hummus' },
+  ];
+
   Pages.home = () => {
     const vanity = byHandle('stand-up-mesh-vanity-bag');
+    const first = byHandle(HERO_SLIDES[0].handle);
     const marqueeWords = ['Travel better', 'Stay organized', 'Everything in its place', 'A tidier, brighter you', 'Small details, a bigger difference'];
     const group = `<div class="marquee__group" aria-hidden="true">${marqueeWords.map((w) => `<span class="marquee__item">${w}</span><span class="marquee__sep">${icon('sparkle')}</span>`).join('')}</div>`;
     const stack = [
@@ -173,9 +183,21 @@
           </div>
         </div>
         <div class="hero__media" id="heroMedia">
-          <div class="hero__img hero__img--top frame" data-depth="0.5"><div class="frame__core">${img('crop-kit-flatlay', 'Tidely suede care kit next to its green gift box', { sizes: '20vw', eager: true })}</div></div>
-          <div class="hero__img hero__img--main frame" data-depth="0.25"><div class="frame__core">${img('crop-hero-ivory-bag', 'Ivory Stand-Up Vanity Bag on a marble bathroom counter', { sizes: '(max-width: 900px) 70vw, 36vw', eager: true })}</div></div>
-          <div class="hero__img hero__img--left frame" data-depth="0.9"><div class="frame__core">${img('crop-grey-bag', 'Grey Stand-Up Vanity Bag filled with makeup brushes', { sizes: '(max-width: 900px) 45vw, 22vw', eager: true })}</div></div>
+          <div class="hshow" id="hshow">
+            <p class="hshow__ghost" aria-hidden="true"><span id="hGhost">${collectionOf(first.collection).title}</span></p>
+            <div class="hshow__ring" aria-hidden="true"></div>
+            <div class="hshow__arch">
+              ${HERO_SLIDES.map((s, i) => `<figure class="hshow__slide" data-i="${i}"${i ? ' aria-hidden="true"' : ''}><img src="${src(s.image)}" srcset="${srcset(s.image)}" sizes="(max-width: 900px) 80vw, 36vw" alt="${esc(s.alt)}" style="object-position:${s.pos}" ${i === 0 ? 'fetchpriority="high"' : ''} decoding="async"></figure>`).join('')}
+            </div>
+            <a class="hshow__card" id="hCard" href="#/product/${first.handle}" data-link>
+              <span class="hshow__line"><span class="hshow__cat" id="hCat">${collectionOf(first.collection).title}</span></span>
+              <span class="hshow__line"><span class="hshow__name" id="hName">${esc(first.title)}</span></span>
+              <span class="hshow__foot"><span class="hshow__line"><span class="price" id="hPrice">${fromPrice(first)}</span></span><span class="hshow__go">${icon('arrowUp')}</span></span>
+            </a>
+            <div class="hshow__bars" role="tablist" aria-label="Featured products">
+              ${HERO_SLIDES.map((s, i) => `<button role="tab" aria-selected="${i === 0}" aria-label="Show ${esc(byHandle(s.handle).title)}" data-go="${i}"><span><i></i></span></button>`).join('')}
+            </div>
+          </div>
         </div>
       </div>
     </section>
@@ -659,34 +681,108 @@
   const Controllers = {};
 
   Controllers.home = (root, { intro }) => {
-    // Hero entrance
+    // Hero: headline entrance + arch showcase that cycles through products
     const title = $('#heroTitle', root);
+    const show = $('#hshow', root);
+    const slides = $$('.hshow__slide', show);
+    const bars = $$('.hshow__bars button', show);
+    const fills = bars.map((b) => b.querySelector('i'));
+    const heroProducts = HERO_SLIDES.map((s) => byHandle(s.handle));
+    const DWELL = 5.5;
+    let cur = 0;
+    let progress = null;
+    let hovering = false;
+    let heroVisible = true;
+    let alive = true;
+    cleanups.push(() => { alive = false; progress?.kill(); });
+
+    const swapText = (el, text) => {
+      if (el.textContent === text) return;
+      if (reduced) { el.textContent = text; return; }
+      gsap.timeline()
+        .to(el, { yPercent: -110, duration: 0.4, ease: 'power3.in' })
+        .add(() => { el.textContent = text; })
+        .fromTo(el, { yPercent: 110 }, { yPercent: 0, duration: 0.9, ease: 'expo.out' });
+    };
+    const setFills = () => fills.forEach((f, i) => gsap.set(f, { scaleX: i < cur ? 1 : 0 }));
+    const startProgress = () => {
+      progress?.kill();
+      if (reduced || !alive) return;
+      progress = gsap.fromTo(fills[cur], { scaleX: 0 }, { scaleX: 1, duration: DWELL, ease: 'none', onComplete: () => go((cur + 1) % slides.length) });
+      if (hovering || !heroVisible) progress.pause();
+    };
+    function go(n) {
+      if (!alive) return;
+      if (n === cur) { startProgress(); return; }
+      const prev = slides[cur];
+      const next = slides[n];
+      const p = heroProducts[n];
+      slides.forEach((s, i) => {
+        s.setAttribute('aria-hidden', String(i !== n));
+        gsap.set(s, { zIndex: i === n ? 2 : i === cur ? 1 : 0 });
+      });
+      bars.forEach((b, i) => b.setAttribute('aria-selected', String(i === n)));
+      if (reduced) {
+        gsap.set(next, { clipPath: 'inset(0% 0% 0% 0%)' });
+        gsap.set(prev, { clipPath: 'inset(100% 0% 0% 0%)' });
+      } else {
+        gsap.fromTo(next, { clipPath: 'inset(100% 0% 0% 0%)' }, { clipPath: 'inset(0% 0% 0% 0%)', duration: 1.35, ease: 'tidelyInOut', overwrite: true });
+        gsap.fromTo(next.querySelector('img'), { scale: 1.3, yPercent: 7 }, { scale: 1, yPercent: 0, duration: 2.4, ease: 'expo.out', overwrite: true });
+        gsap.to(prev.querySelector('img'), {
+          scale: 1.12, yPercent: -7, duration: 1.35, ease: 'tidelyInOut', overwrite: true,
+          onComplete: () => { if (slides.indexOf(prev) !== cur) gsap.set(prev, { clipPath: 'inset(100% 0% 0% 0%)' }); },
+        });
+      }
+      const cat = collectionOf(p.collection).title;
+      swapText($('#hCat', show), cat);
+      swapText($('#hName', show), p.title);
+      swapText($('#hPrice', show), fromPrice(p));
+      swapText($('#hGhost', show), cat);
+      $('#hCard', show).setAttribute('href', `#/product/${p.handle}`);
+      cur = n;
+      setFills();
+      startProgress();
+    }
+    gsap.set(slides[0], { clipPath: 'inset(0% 0% 0% 0%)', zIndex: 2 });
+    bars.forEach((b) => b.addEventListener('click', () => go(+b.dataset.go)));
+    show.addEventListener('pointerenter', () => { hovering = true; progress?.pause(); });
+    show.addEventListener('pointerleave', () => { hovering = false; if (heroVisible) progress?.resume(); });
+    show.addEventListener('focusin', () => { hovering = true; progress?.pause(); });
+    show.addEventListener('focusout', () => { hovering = false; if (heroVisible) progress?.resume(); });
+    ScrollTrigger.create({
+      trigger: '.hero', start: 'top top', end: 'bottom top',
+      onToggle: (self) => { heroVisible = self.isActive; if (!heroVisible) progress?.pause(); else if (!hovering) progress?.resume(); },
+    });
+
     const heroTl = gsap.timeline({ paused: true, defaults: { ease: 'expo.out' } });
     if (!reduced) {
       const split = SplitText.create(title, { type: 'lines,words', mask: 'lines' });
       heroTl.from(split.lines, { yPercent: 115, duration: 1.4, stagger: 0.12 })
         .from($$('[data-hero-fade]', root), { y: 30, opacity: 0, duration: 1.2, stagger: 0.12 }, '-=1')
-        .from($$('.hero__img', root), { clipPath: 'inset(100% 0% 0% 0%)', duration: 1.6, stagger: 0.14, ease: 'expo.inOut' }, 0)
-        .from($$('.hero__img img', root), { scale: 1.3, duration: 2, stagger: 0.14 }, 0.1);
+        .from('.hshow__arch', { clipPath: 'inset(100% 0% 0% 0%)', duration: 1.6, ease: 'expo.inOut', clearProps: 'clipPath' }, 0)
+        .from(slides[0].querySelector('img'), { scale: 1.35, duration: 2.4 }, 0.1)
+        .from('.hshow__ring', { opacity: 0, scale: 0.94, duration: 1.6 }, 0.45)
+        .from('#hGhost', { yPercent: 110, duration: 1.4 }, 0.55)
+        .from('.hshow__card', { x: -40, opacity: 0, duration: 1.2 }, 0.9)
+        .from('.hshow__bars', { opacity: 0, y: 10, duration: 1 }, 1.1)
+        .add(() => startProgress());
       intro.then(() => heroTl.play());
 
-      // Parallax on scroll
-      gsap.utils.toArray('.hero__img', root).forEach((el) => {
-        gsap.to(el, { yPercent: -parseFloat(el.dataset.depth) * 30, ease: 'none', scrollTrigger: { trigger: '.hero', start: 'top top', end: 'bottom top', scrub: true } });
-      });
-      gsap.to('.hero__copy', { yPercent: -18, opacity: 0.2, ease: 'none', scrollTrigger: { trigger: '.hero', start: 'top top', end: 'bottom top', scrub: true } });
+      // Scroll depth: the arch, ring, ghost word and card drift at different speeds
+      const scrub = { trigger: '.hero', start: 'top top', end: 'bottom top', scrub: true };
+      gsap.to('.hshow__arch', { yPercent: -6, ease: 'none', scrollTrigger: { ...scrub } });
+      gsap.to('.hshow__ghost', { yPercent: 40, ease: 'none', scrollTrigger: { ...scrub } });
+      gsap.to('.hshow__card', { yPercent: -60, ease: 'none', scrollTrigger: { ...scrub } });
+      gsap.to('.hero__copy', { yPercent: -18, opacity: 0.2, ease: 'none', scrollTrigger: { ...scrub } });
 
-      // Pointer depth on the image stack
+      // Pointer depth
       if (finePointer) {
-        const media = $('#heroMedia', root);
-        const layers = $$('.hero__img', media).map((el) => ({
-          x: gsap.quickTo(el.querySelector('.frame__core'), 'x', { duration: 1.2, ease: 'power3.out' }),
-          y: gsap.quickTo(el.querySelector('.frame__core'), 'y', { duration: 1.2, ease: 'power3.out' }),
-          d: parseFloat(el.dataset.depth),
-        }));
+        const ringX = gsap.quickTo('.hshow__ring', 'x', { duration: 1.2, ease: 'power3.out' });
+        const ringY = gsap.quickTo('.hshow__ring', 'y', { duration: 1.2, ease: 'power3.out' });
+        const ghostX = gsap.quickTo('.hshow__ghost', 'x', { duration: 1.6, ease: 'power3.out' });
         const onMove = (e) => {
           const nx = e.clientX / innerWidth - 0.5; const ny = e.clientY / innerHeight - 0.5;
-          layers.forEach((l) => { l.x(nx * 28 * l.d); l.y(ny * 22 * l.d); });
+          ringX(nx * -22); ringY(ny * -16); ghostX(nx * 40);
         };
         window.addEventListener('pointermove', onMove);
         cleanups.push(() => window.removeEventListener('pointermove', onMove));
