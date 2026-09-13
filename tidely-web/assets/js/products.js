@@ -173,7 +173,7 @@ window.TIDELY_PRODUCTS = [
     subtitle: 'Divided box with locking lid, 31 × 24 × 7 cm',
     collection: 'organize',
     tag: 'New',
-    price: 17.95,
+    price: 19.95,
     card: 'crop-snack-top',
     cardAlt: 'crop-snack-hosting',
     images: ['crop-snack-top', 'airtight-snack-organizer-01', 'airtight-snack-organizer-02', 'airtight-snack-organizer-03', 'airtight-snack-organizer-04'],
