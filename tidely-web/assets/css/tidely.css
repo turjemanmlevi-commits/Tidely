@@ -538,6 +538,15 @@ html.no-intro .preloader { display: none; }
 .grid-products { display: grid; grid-template-columns: repeat(3, 1fr); gap: clamp(1.5rem, 3vw, 2.5rem) clamp(1rem, 2vw, 2rem); }
 .grid-products .pcard.is-feature { grid-column: span 2; }
 .grid-products .pcard.is-feature .pcard__media { aspect-ratio: 8 / 5; }
+.pager { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: .75rem; margin-top: clamp(3rem, 6vw, 4.5rem); }
+.pager__list { display: flex; gap: .5rem; list-style: none; margin: 0; padding: 0; }
+.pager__num, .pager__arrow { min-width: 3rem; height: 3rem; padding-inline: .5rem; border-radius: 999px; border: 1px solid var(--line-strong); display: grid; place-items: center; color: var(--cream); font-size: .82rem; font-variant-numeric: tabular-nums; transition: background-color .3s, border-color .3s, color .3s; }
+.pager__num:hover, .pager__arrow:not(:disabled):hover { border-color: var(--champagne); color: var(--champagne); }
+.pager__num.is-active { background: var(--champagne); border-color: var(--champagne); color: var(--forest-deep); }
+.pager__arrow:disabled { opacity: .3; cursor: default; }
+.pager__arrow i, .pager__arrow svg { width: 1rem; height: 1rem; display: block; }
+.pager__arrow--prev i { transform: rotate(180deg); }
+.pager__count { flex-basis: 100%; margin: .25rem 0 0; text-align: center; color: var(--cream-muted); font-size: .78rem; letter-spacing: .08em; }
 .empty { padding: 5rem 0; text-align: center; color: var(--cream-muted); display: grid; gap: 1.25rem; justify-items: center; }
 
 /* ---------- Product page ---------- */

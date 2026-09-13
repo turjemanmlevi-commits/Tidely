@@ -97,7 +97,7 @@ theme = """<!doctype html>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..700;1,6..96,400..600&family=Jost:wght@300;400;500&display=swap" rel="stylesheet">
-{%- if template.name == 'index' %}<link rel="preload" as="image" href="{{ 'hero-steamer.webp' | asset_url }}">{% endif %}
+{%- if template.name == 'index' %}<link rel="preload" as="image" href="{{ 'hero-plant.webp' | asset_url }}">{% endif %}
 {{ 'tidely.css' | asset_url | stylesheet_tag }}
 {{ content_for_header }}
 </head>

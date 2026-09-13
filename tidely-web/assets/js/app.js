@@ -118,7 +118,7 @@
     const parts = path.split('/').filter(Boolean);
     const q = qs ? `?${qs}` : '';
     if (!parts.length) return '/';
-    if (parts[0] === 'shop') return parts[1] ? `/collections/${parts[1]}` : '/collections/all';
+    if (parts[0] === 'shop') return `${parts[1] ? `/collections/${parts[1]}` : '/collections/all'}${q}`;
     if (parts[0] === 'product') return `/products/${parts[1]}${q}`;
     if (['about', 'faq', 'contact'].includes(parts[0])) return `/pages/${parts[0]}`;
     if (parts[0] === 'policy') return `/policies/${POLICY_PATHS[parts[1]] || parts[1]}`;
@@ -294,11 +294,11 @@
   /* ---------- Home ---------- */
   // Hero showcase: one product from each corner of the catalogue.
   const HERO_SLIDES = [
-    { handle: 'portable-garment-steamer', image: 'hero-steamer', pos: '50% 40%', alt: 'Black handheld garment steamer releasing a cloud of steam' },
     { handle: 'six-tier-plant-stand', image: 'hero-plant', pos: '50% 42%', alt: 'Black six-tier plant stand filled with trailing plants, books and a woven basket' },
-    { handle: 'steam-pet-grooming-brush', image: 'hero-pet', pos: '50% 50%', alt: 'Sage green pet brush with orange silicone bristles releasing a fine mist' },
-    { handle: 'olive-oil-sprayer', image: 'crop-olive-green', pos: '50% 55%', alt: 'Brushed stainless steel oil sprayer on a forest green background' },
-    { handle: 'airtight-snack-organizer', image: 'crop-snack-top', pos: '50% 50%', alt: 'Snack organizer filled with nuts, olives, dried fruit, crackers and hummus' },
+    { handle: 'airtight-snack-organizer', image: 'crop-snack-hosting', pos: '50% 60%', alt: 'Hands setting a snack organizer filled with fruit, nuts, crackers and a dip on a green dinner table' },
+    { handle: 'two-tier-under-sink-organizer', image: 'crop-sink-cabinet', pos: '80% 60%', alt: 'Two white pull-out organizers holding towels and soaps under a bathroom sink' },
+    { handle: 'three-tier-spice-rack', image: 'crop-spice-counter', pos: '50% 50%', alt: 'Silver spice rack with angled rows of glass jars on a marble counter' },
+    { handle: 'expandable-drawer-organizer', image: 'crop-expdrawer-flat', pos: '0% 50%', alt: 'White expandable drawer organizer holding rolled socks and lingerie on green linen' },
   ];
 
   // Snack organizer anatomy: hotspot positions are percentages of crop-snack-top.
@@ -526,6 +526,7 @@
         </label>
       </div>
       <div class="grid-products" id="grid"></div>
+      <nav class="pager" id="pager" aria-label="Product pages" hidden></nav>
       <div class="empty" id="empty" hidden><h2 class="h-md">Nothing here yet</h2><p>This space is waiting for its first piece.</p><button class="btn btn--ghost" data-filter="all"><span>Show everything</span></button></div>
     </section>`;
   };
@@ -1102,19 +1103,44 @@
     }
   };
 
-  Controllers.shop = (root, { params }) => {
+  // Shop: "Featured" groups products by collection (Care, Organize, Pet Home, Travel), 9 per page.
+  const PER_PAGE = 9;
+  const collectionRank = (p) => { const i = COLLECTIONS.findIndex((c) => c.handle === p.collection); return i < 0 ? COLLECTIONS.length : i; };
+  Controllers.shop = (root, { params, query }) => {
     const grid = $('#grid', root);
     const empty = $('#empty', root);
+    const pager = $('#pager', root);
     const sortSel = $('#sort', root);
     let filter = params.collection && collectionOf(params.collection) ? params.collection : 'all';
-    const draw = (animate) => {
-      let list = PRODUCTS.filter((p) => filter === 'all' || p.collection === filter);
-      if (sortSel.value === 'price-asc') list = [...list].sort((a, b) => a.price - b.price);
-      if (sortSel.value === 'price-desc') list = [...list].sort((a, b) => b.price - a.price);
-      const state = animate && !reduced ? Flip.getState($$('.pcard', grid)) : null;
-      grid.innerHTML = list.map((p, i) => productCard(p, { feature: i === 0 && list.length >= 4 })).join('');
+    let page = Math.max(1, parseInt(query?.get('page'), 10) || 1);
+    const listFor = () => {
+      const list = PRODUCTS.filter((p) => filter === 'all' || p.collection === filter);
+      if (sortSel.value === 'price-asc') return list.sort((a, b) => a.price - b.price);
+      if (sortSel.value === 'price-desc') return list.sort((a, b) => b.price - a.price);
+      return list.sort((a, b) => collectionRank(a) - collectionRank(b)); // stable: keeps the featured order inside each collection
+    };
+    const syncUrl = () => setUrl(`${filter === 'all' ? '#/shop' : `#/shop/${filter}`}${page > 1 ? `?page=${page}` : ''}`);
+    const drawPager = (total, pages) => {
+      pager.hidden = pages < 2;
+      if (pages < 2) { pager.innerHTML = ''; return; }
+      const from = (page - 1) * PER_PAGE + 1;
+      const to = Math.min(page * PER_PAGE, total);
+      pager.innerHTML = `
+        <button class="pager__arrow pager__arrow--prev" data-page="${page - 1}"${page === 1 ? ' disabled' : ''} aria-label="Previous page">${ic('arrow')}</button>
+        <ol class="pager__list">${Array.from({ length: pages }, (_, i) => i + 1).map((n) => `<li><button class="pager__num${n === page ? ' is-active' : ''}" data-page="${n}"${n === page ? ' aria-current="page"' : ''} aria-label="Page ${n}">${n}</button></li>`).join('')}</ol>
+        <button class="pager__arrow" data-page="${page + 1}"${page === pages ? ' disabled' : ''} aria-label="Next page">${ic('arrow')}</button>
+        <p class="pager__count">${from} to ${to} of ${total} products</p>`;
+    };
+    const render = (mode) => {
+      const list = listFor();
+      const pages = Math.max(1, Math.ceil(list.length / PER_PAGE));
+      page = Math.min(page, pages);
+      const shown = list.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+      const state = mode === 'flip' && !reduced ? Flip.getState($$('.pcard', grid)) : null;
+      grid.innerHTML = shown.map((p) => productCard(p)).join('');
       fixLinks(grid);
       empty.hidden = list.length > 0;
+      drawPager(list.length, pages);
       if (state) {
         Flip.from(state, {
           targets: $$('.pcard', grid), duration: 0.9, ease: 'expo.inOut', absolute: true, scale: true,
@@ -1123,22 +1149,35 @@
           onComplete: () => ScrollTrigger.refresh(),
         });
       } else if (!reduced) {
-        gsap.from($$('.pcard', grid), { y: 60, opacity: 0, duration: 1.2, stagger: 0.08, ease: 'expo.out', delay: 0.2 });
+        gsap.from($$('.pcard', grid), { y: 60, opacity: 0, duration: 1.2, stagger: 0.06, ease: 'expo.out', delay: mode === 'page' ? 0 : 0.2, onComplete: () => ScrollTrigger.refresh() });
+      } else {
+        ScrollTrigger.refresh();
       }
+    };
+    const goToPage = (n) => {
+      if (n === page || n < 1) return;
+      page = n;
+      syncUrl();
+      scrollTo($('.toolbar', root), { offset: -140, duration: 1 });
+      const cards = $$('.pcard', grid);
+      if (reduced || !cards.length) { render('page'); return; }
+      gsap.to(cards, { opacity: 0, y: -24, duration: 0.35, stagger: 0.02, ease: 'power2.in', onComplete: () => render('page') });
     };
     const setFilter = (f) => {
       filter = f;
+      page = 1;
       $$('.chip', root).forEach((c) => c.classList.toggle('is-active', c.dataset.filter === f));
       const c = collectionOf(f);
       $('#shopTitle', root).textContent = c ? c.title : 'Shop all';
       $('#shopBlurb', root).textContent = c ? c.blurb : ALL_BLURB;
-      setUrl(f === 'all' ? '#/shop' : `#/shop/${f}`);
+      syncUrl();
       document.title = `${c ? c.title : 'Shop all'} | Tidely`;
-      draw(true);
+      render('flip');
     };
     $$('[data-filter]', root).forEach((b) => b.addEventListener('click', () => setFilter(b.dataset.filter)));
-    sortSel.addEventListener('change', () => draw(true));
-    draw(false);
+    sortSel.addEventListener('change', () => { page = 1; syncUrl(); render('flip'); });
+    pager.addEventListener('click', (e) => { const b = e.target.closest('[data-page]'); if (b && !b.disabled) goToPage(Number(b.dataset.page)); });
+    render('first');
   };
 
   Controllers.product = (root) => {
@@ -1530,7 +1569,7 @@
       reveals(main);
       magnetic(main);
       accordions(main);
-      Controllers[route.name]?.(main, { params: route.params, intro: firstRender ? intro : Promise.resolve() });
+      Controllers[route.name]?.(main, { params: route.params, query: route.query, intro: firstRender ? intro : Promise.resolve() });
     }, main);
     requestAnimationFrame(() => ScrollTrigger.refresh());
   }
