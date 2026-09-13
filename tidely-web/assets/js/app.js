@@ -159,8 +159,16 @@
     { handle: 'airtight-snack-organizer', image: 'crop-snack-top', pos: '50% 50%', alt: 'Snack organizer filled with nuts, olives, dried fruit, crackers and hummus' },
   ];
 
+  // Snack organizer anatomy: hotspot positions are percentages of crop-snack-top.
+  const ANATOMY = [
+    { x: 30, y: 17, title: 'Clear, sealing lid', text: 'The clear lid shows what is inside at a glance and closes tight, so snacks stay fresh in the fridge.' },
+    { x: 92, y: 60, title: 'Four locking clips', text: 'A clip on every side keeps the lid shut when you carry the box from the fridge to the table.' },
+    { x: 50, y: 60, title: 'Central dip bowl', text: 'A round bowl in the middle keeps hummus, dips and spreads away from the crunchy things.' },
+    { x: 24, y: 43, title: 'Removable compartments', text: 'Lift out any section to refill it or wash it on its own.' },
+    { x: 82, y: 87, title: '31 × 24 × 7 cm', text: 'Sized to slide onto a standard fridge shelf and to sit neatly in the middle of the table.' },
+  ];
+
   Pages.home = () => {
-    const vanity = byHandle('stand-up-mesh-vanity-bag');
     const first = byHandle(HERO_SLIDES[0].handle);
     const marqueeWords = ['Travel better', 'Stay organized', 'Everything in its place', 'A tidier, brighter you', 'Small details, a bigger difference'];
     const group = `<div class="marquee__group" aria-hidden="true">${marqueeWords.map((w) => `<span class="marquee__item">${w}</span><span class="marquee__sep">${icon('sparkle')}</span>`).join('')}</div>`;
@@ -248,19 +256,20 @@
       </div>
     </section>
 
-    <section class="section" data-section="colour">
-      <div class="wrap colour">
-        <div class="colour__stage" id="colourStage" data-reveal="clip">
-          <img src="${src('crop-colour-row')}" alt="The Stand-Up Vanity Bag in grey, ivory, black, sage and blush" id="colourImg" loading="lazy" decoding="async">
+    <section class="section" data-section="anatomy">
+      <div class="wrap anatomy">
+        <div class="anatomy__stage" id="anatomy" data-reveal="clip">
+          <img src="${src('crop-snack-top')}" srcset="${srcset('crop-snack-top')}" sizes="(max-width: 900px) 100vw, 55vw" alt="Top view of the Airtight Snack Organizer filled with almonds, olives, cranberries, cheese, crackers, walnuts, apricots, pistachios and hummus" loading="lazy" decoding="async">
+          <span class="anatomy__spot" aria-hidden="true"></span>
+          ${ANATOMY.map((a, i) => `<button class="hotspot${i === 0 ? ' is-active' : ''}" style="left:${a.x}%;top:${a.y}%" data-spot="${i}" aria-label="${esc(a.title)}" aria-pressed="${i === 0}"><span class="hotspot__ring" aria-hidden="true"></span>${icon('plus')}</button>`).join('')}
         </div>
-        <div class="colour__copy">
-          <h2 class="h-xl" data-split>Choose your colour</h2>
-          <p class="lede" data-reveal>Grey, ivory, black, sage or blush. Each Stand-Up Vanity Bag stands on its own, so brushes stay upright and the counter stays clear.</p>
-          <p class="colour__name" aria-live="polite"><span id="colourName">All five</span></p>
-          <div class="swatches" role="group" aria-label="Vanity Bag colours" data-reveal>
-            ${vanity.options.values.map((v) => `<button class="swatch${v.available === false ? ' is-soldout' : ''}" aria-pressed="false" data-colour="${v.value}" data-fx="${v.fx}" aria-label="${v.value}${v.available === false ? ', sold out' : ''}"><span class="swatch__chip" style="background:${v.hex}"></span>${v.value}</button>`).join('')}
-          </div>
-          <div data-reveal>${btn('Shop the vanity bag', '#/product/stand-up-mesh-vanity-bag', 'ghost', 'id="colourCta"')}</div>
+        <div class="anatomy__copy">
+          <h2 class="h-xl" data-split>One box, <em>every snack.</em></h2>
+          <p class="lede" data-reveal>Tap a point on the photo to see how the Airtight Snack Organizer keeps every snack fresh and separate.</p>
+          <ul class="features" data-reveal>
+            ${ANATOMY.map((a, i) => `<li class="feature${i === 0 ? ' is-active' : ''}"><button class="feature__btn" data-spot="${i}" aria-expanded="${i === 0}">${esc(a.title)}</button><div class="feature__more"><p>${esc(a.text)}</p></div></li>`).join('')}
+          </ul>
+          <div class="anatomy__buy" data-reveal>${btn('Shop the snack organizer', '#/product/airtight-snack-organizer', 'solid', 'data-magnetic')}<span class="price">${money(byHandle('airtight-snack-organizer').price)}</span></div>
         </div>
       </div>
     </section>
@@ -854,39 +863,48 @@
     });
     matchMedias.push(mm);
 
-    // Colour explorer
-    const stage = $('#colourStage', root);
-    const cImg = $('#colourImg', root);
-    const nameEl = $('#colourName', root);
-    const cta = $('#colourCta', root);
-    const ratio = 1254 / 540;
-    const frameFor = (fx) => {
-      const r = stage.getBoundingClientRect();
-      const w = r.height * ratio;
-      if (fx == null) { const s = r.width / w; return { x: 0, scale: s }; }
-      const s = 1.08;
-      const limit = Math.max(0, (w * s - r.width) / 2); // keep the image covering the stage edges
-      return { x: gsap.utils.clamp(-limit, limit, -(fx - 0.5) * w * s), scale: s };
+    // Snack organizer anatomy: a spotlight glides between hotspots, the matching feature opens
+    const stage = $('#anatomy', root);
+    const spot = $('.anatomy__spot', stage);
+    const hotspots = $$('.hotspot', stage);
+    const features = $$('.feature', root);
+    let active = 0;
+    let auto = null;
+    let userTook = false;
+    const place = (i, instant) => {
+      const a = ANATOMY[i];
+      gsap.to(spot, { '--x': `${a.x}%`, '--y': `${a.y}%`, duration: instant || reduced ? 0 : 1.1, ease: 'tidelyInOut', overwrite: true });
     };
-    let current = null;
-    const setColour = (btnEl, instant = false) => {
-      const fx = btnEl ? parseFloat(btnEl.dataset.fx) : null;
-      current = btnEl?.dataset.colour || null;
-      $$('.swatch', stage.parentElement).forEach((b) => b.setAttribute('aria-pressed', String(b === btnEl)));
-      gsap.to(cImg, { ...frameFor(fx), xPercent: -50, yPercent: -50, duration: instant || reduced ? 0 : 1.4, ease: 'expo.inOut', overwrite: true });
-      const label = current || 'All five';
-      if (reduced || instant) nameEl.textContent = label;
-      else gsap.timeline().to(nameEl, { yPercent: -110, duration: 0.4, ease: 'power3.in' }).add(() => { nameEl.textContent = label; }).fromTo(nameEl, { yPercent: 110 }, { yPercent: 0, duration: 0.8, ease: 'expo.out' });
-      if (cta) cta.setAttribute('href', `#/product/stand-up-mesh-vanity-bag${current ? `?colour=${encodeURIComponent(current)}` : ''}`);
+    const setActive = (i, instant = false) => {
+      active = i;
+      hotspots.forEach((h, k) => { h.classList.toggle('is-active', k === i); h.setAttribute('aria-pressed', String(k === i)); });
+      features.forEach((f, k) => { f.classList.toggle('is-active', k === i); f.querySelector('.feature__btn').setAttribute('aria-expanded', String(k === i)); });
+      place(i, instant);
     };
-    gsap.set(cImg, { xPercent: -50, yPercent: -50, x: 0, y: 0 });
-    const fit = () => { if (!current) gsap.set(cImg, frameFor(null)); else setColour($(`.swatch[data-colour="${current}"]`, root), true); };
-    fit();
-    $$('.swatch', root).forEach((b) => b.addEventListener('click', () => setColour(b)));
-    ScrollTrigger.create({ trigger: stage, start: 'top 55%', once: true, onEnter: () => { if (!current) gsap.delayedCall(0.6, () => setColour($('.swatch', root))); } });
-    const onResize = () => fit();
-    window.addEventListener('resize', onResize);
-    cleanups.push(() => window.removeEventListener('resize', onResize));
+    const stopAuto = () => { userTook = true; auto?.kill(); auto = null; };
+    const runAuto = () => {
+      if (reduced || userTook || !alive || auto) return;
+      auto = gsap.delayedCall(4.2, () => { auto = null; setActive((active + 1) % ANATOMY.length); runAuto(); });
+    };
+    cleanups.push(() => auto?.kill());
+    $$('[data-spot]', root).forEach((b) => b.addEventListener('click', () => { stopAuto(); setActive(+b.dataset.spot); }));
+    setActive(0, true);
+    if (!reduced) {
+      gsap.set(hotspots, { scale: 0, opacity: 0 });
+      gsap.set(spot, { opacity: 0 });
+      ScrollTrigger.create({
+        trigger: stage, start: 'top 70%', end: 'bottom 20%',
+        onEnter: () => {
+          if (stage.dataset.shown) { auto?.resume(); return; }
+          stage.dataset.shown = '1';
+          gsap.to(hotspots, { scale: 1, opacity: 1, duration: 0.8, stagger: 0.1, delay: 0.6, ease: 'back.out(2)' });
+          gsap.to(spot, { opacity: 1, duration: 1, delay: 0.9, onComplete: runAuto });
+        },
+        onLeave: () => { auto?.pause(); },
+        onEnterBack: () => { if (auto) auto.resume(); },
+        once: false,
+      });
+    }
 
     // Statement: words light up as you read
     const st = $('#statement', root);
