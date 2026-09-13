@@ -6,6 +6,12 @@
       "runtimeExecutable": "python",
       "runtimeArgs": ["-m", "http.server", "5173", "--directory", "tidely-web"],
       "port": 5173
+    },
+    {
+      "name": "webprecious",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "../WebPrecious", "run", "dev", "--", "--port", "5174", "--strictPort"],
+      "port": 5174
     }
   ]
 }

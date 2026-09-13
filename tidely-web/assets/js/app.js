@@ -14,7 +14,9 @@
   gsap.defaults({ ease: 'tidely', duration: 1 });
 
   const CONFIG = window.TIDELY_CONFIG;
-  const PRODUCTS = window.TIDELY_PRODUCTS;
+  const FEATURED = window.TIDELY_FEATURED || [];
+  const rank = (p) => { const i = FEATURED.indexOf(p.handle); return i < 0 ? 999 : i; };
+  const PRODUCTS = [...window.TIDELY_PRODUCTS].sort((a, b) => rank(a) - rank(b));
   const COLLECTIONS = window.TIDELY_COLLECTIONS;
   const ICONS = window.TIDELY_ICONS;
   const PAY = window.TIDELY_PAY;
@@ -164,7 +166,7 @@
       <div class="wrap hero__grid">
         <div class="hero__copy">
           <h1 class="hero__title" id="heroTitle">Everything in its <em>place.</em></h1>
-          <p class="hero__sub" data-hero-fade>Organizers for drawers, suitcases and shelves, designed to make everyday life feel calmer and lighter.</p>
+          <p class="hero__sub" data-hero-fade>Organizers and small tools for kitchens, wardrobes and suitcases, designed to make everyday life calmer and lighter.</p>
           <div class="hero__ctas" data-hero-fade>
             ${btn('Shop the collection', '#/shop', 'solid', 'data-magnetic')}
             <a class="btn btn--ghost" href="#/about" data-link><span>Our story</span></a>
@@ -205,7 +207,7 @@
         <div class="wrap hscroll__top">
           <div class="head" style="margin-bottom:0">
             <span class="eyebrow" data-reveal>The collection</span>
-            <h2 class="h-xl" data-split>Five pieces, made for <em>daily use.</em></h2>
+            <h2 class="h-xl" data-split>Pieces you reach for <em>every day.</em></h2>
           </div>
         </div>
         <div class="hscroll__track" id="hTrack">
@@ -317,10 +319,11 @@
   };
 
   /* ---------- Shop / collection ---------- */
+  const ALL_BLURB = 'Considered pieces for kitchens, wardrobes and suitcases, and for the pets you share your home with.';
   Pages.shop = ({ collection }) => {
     const c = collectionOf(collection);
     const title = c ? c.title : 'Shop all';
-    const blurb = c ? c.blurb : 'Five considered pieces for drawers, suitcases, shelves and shoes.';
+    const blurb = c ? c.blurb : ALL_BLURB;
     return `
     <section class="page-head">
       <div class="wrap">
@@ -358,7 +361,8 @@
     const selected = variantOf(p, query.get('colour') || query.get('size'))?.value || null;
     const start = selected && p.options?.values.find((v) => v.value === selected)?.image;
     const startIdx = start ? Math.max(0, p.images.indexOf(start)) : 0;
-    const related = PRODUCTS.filter((x) => x.handle !== p.handle).slice(0, 3);
+    const others = PRODUCTS.filter((x) => x.handle !== p.handle);
+    const related = [...others.filter((x) => x.collection === p.collection), ...others.filter((x) => x.collection !== p.collection)].slice(0, 3);
     const details = p.images.filter((n) => !n.startsWith('crop-')).slice(1, 4);
     const optionsHtml = p.options ? `
       <div class="opt">
@@ -852,7 +856,7 @@
       $$('.chip', root).forEach((c) => c.classList.toggle('is-active', c.dataset.filter === f));
       const c = collectionOf(f);
       $('#shopTitle', root).textContent = c ? c.title : 'Shop all';
-      $('#shopBlurb', root).textContent = c ? c.blurb : 'Five considered pieces for drawers, suitcases, shelves and shoes.';
+      $('#shopBlurb', root).textContent = c ? c.blurb : ALL_BLURB;
       history.replaceState(null, '', f === 'all' ? '#/shop' : `#/shop/${f}`);
       document.title = `${c ? c.title : 'Shop all'} | Tidely`;
       draw(true);
