@@ -18,10 +18,10 @@ window.TIDELY_FEATURED = [
 ];
 
 window.TIDELY_COLLECTIONS = [
-  { handle: 'care', title: 'Care', blurb: 'Clothes, shoes and wardrobes, kept in good shape.', image: 'crop-steamer-shirt' },
-  { handle: 'organize', title: 'Organize', blurb: 'Kitchens and small spaces that work a little harder.', image: 'crop-sink-cabinet' },
-  { handle: 'pet-home', title: 'Pet Home', blurb: 'Gentle care for pets, and a cleaner home around them.', image: 'crop-pet-cat' },
-  { handle: 'travel', title: 'Travel', blurb: 'Packing that stays organized from the first day of the trip to the last.', image: 'crop-tech-carry' },
+  { handle: 'care', title: 'Care', blurb: 'Clothes, shoes and wardrobes, kept in good shape.', image: 'crop-steamer-shirt', pos: '62% 50%' },
+  { handle: 'organize', title: 'Organize', blurb: 'Kitchens and small spaces that work a little harder.', image: 'crop-sink-cabinet', pos: '50% 55%' },
+  { handle: 'pet-home', title: 'Pet Home', blurb: 'Gentle care for pets, and a cleaner home around them.', image: 'crop-pet-cat', pos: '32% 50%' },
+  { handle: 'travel', title: 'Travel', blurb: 'Packing that stays organized from the first day of the trip to the last.', image: 'crop-tech-carry', pos: '50% 45%' },
 ];
 
 window.TIDELY_PRODUCTS = [

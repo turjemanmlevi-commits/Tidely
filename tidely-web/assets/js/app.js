@@ -212,12 +212,20 @@
           <h2 class="h-xl" data-split>Shop by space</h2>
           <p data-reveal>Start with the corner of your home that bothers you most.</p>
         </div>
-        <div class="bento">
-          ${COLLECTIONS.map((c) => {
+        <div class="spaces" id="spaces">
+          ${COLLECTIONS.map((c, i) => {
             const n = PRODUCTS.filter((p) => p.collection === c.handle).length;
-            return `<a class="bento__cell" href="#/shop/${c.handle}" data-link data-reveal="clip">
-              ${img(c.image, `${c.title} organizers by Tidely`, { sizes: '(max-width: 767px) 100vw, 55vw' })}
-              <div class="bento__meta"><div><h3>${c.title}</h3><p>${n} ${n === 1 ? 'piece' : 'pieces'}</p></div><span class="bento__arrow">${icon('arrowUp')}</span></div>
+            return `<a class="space${i === 0 ? ' is-open' : ''}" href="#/shop/${c.handle}" data-link>
+              <img src="${src(c.image)}" srcset="${srcset(c.image)}" sizes="(max-width: 899px) 100vw, 60vw" alt="${esc(c.title)} by Tidely" style="object-position:${c.pos || '50% 50%'}" loading="lazy" decoding="async">
+              <span class="space__shade" aria-hidden="true"></span>
+              <div class="space__body">
+                <div class="space__line"><span class="space__count">${n} ${n === 1 ? 'piece' : 'pieces'}</span></div>
+                <div class="space__line"><h3 class="space__title">${c.title}</h3></div>
+                <div class="space__more"><div>
+                  <p class="space__blurb">${esc(c.blurb)}</p>
+                  <span class="space__cta">Shop ${esc(c.title)}<span class="space__dot">${icon('arrowUp')}</span></span>
+                </div></div>
+              </div>
             </a>`;
           }).join('')}
         </div>
@@ -806,10 +814,24 @@
       });
     }
 
-    // Bento: inner parallax
+    // Shop by space: accordion panels. Hover or focus opens a panel; the rest fold into columns.
+    const spaces = $('#spaces', root);
+    const panels = $$('.space', spaces);
+    const openPanel = (el) => panels.forEach((p) => p.classList.toggle('is-open', p === el));
+    panels.forEach((p) => {
+      p.addEventListener('pointerenter', () => openPanel(p));
+      p.addEventListener('focusin', () => openPanel(p));
+    });
     if (!reduced) {
-      $$('.bento__cell img', root).forEach((im) => {
-        gsap.fromTo(im, { yPercent: -5 }, { yPercent: 5, ease: 'none', scrollTrigger: { trigger: im.parentElement, start: 'top bottom', end: 'bottom top', scrub: true } });
+      gsap.set(panels, { clipPath: 'inset(100% 0% 0% 0%)' });
+      gsap.set($$('.space__count, .space__title', spaces), { yPercent: 120 });
+      ScrollTrigger.create({
+        trigger: spaces, start: 'top 82%', once: true,
+        onEnter: () => {
+          gsap.to(panels, { clipPath: 'inset(0% 0% 0% 0%)', duration: 1.5, stagger: 0.12, ease: 'tidelyInOut', clearProps: 'clipPath' });
+          gsap.fromTo($$('img', spaces), { scale: 1.35 }, { scale: 1, duration: 2.2, stagger: 0.12, ease: 'expo.out', clearProps: 'transform' });
+          gsap.to($$('.space__count, .space__title', spaces), { yPercent: 0, duration: 1.2, stagger: 0.06, delay: 0.55, ease: 'expo.out' });
+        },
       });
     }
 
