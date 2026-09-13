@@ -187,16 +187,16 @@
       <div class="hero__bg"></div>
       <div class="wrap hero__grid">
         <div class="hero__copy">
+          <span class="eyebrow hero__eyebrow" data-hero-fade>Organizers &amp; home essentials</span>
           <h1 class="hero__title" id="heroTitle">Everything in its <em>place.</em></h1>
-          <p class="hero__sub" data-hero-fade>Organizers and small tools for kitchens, wardrobes and suitcases, designed to make everyday life calmer and lighter.</p>
+          <p class="hero__sub" data-hero-fade>Organizers for kitchens, wardrobes and suitcases. Designed to make everyday life a little calmer.</p>
           <div class="hero__ctas" data-hero-fade>
             ${btn('Shop the collection', '#/shop', 'solid', 'data-magnetic')}
-            <a class="btn btn--ghost" href="#/about" data-link><span>Our story</span></a>
+            <a class="link-underline" href="#/about" data-link>Our story ${ic('arrow')}</a>
           </div>
         </div>
         <div class="hero__media" id="heroMedia">
           <div class="hshow" id="hshow">
-            <p class="hshow__ghost" aria-hidden="true"><span id="hGhost">${collectionOf(first.collection).title}</span></p>
             <div class="hshow__ring" aria-hidden="true"></div>
             <div class="hshow__arch">
               ${HERO_SLIDES.map((s, i) => `<figure class="hshow__slide" data-i="${i}"${i ? ' aria-hidden="true"' : ''}><img src="${src(s.image)}" srcset="${srcset(s.image)}" sizes="(max-width: 900px) 80vw, 36vw" alt="${esc(s.alt)}" style="object-position:${s.pos}" ${i === 0 ? 'fetchpriority="high"' : ''} decoding="async"></figure>`).join('')}
@@ -749,7 +749,6 @@
       swapText($('#hCat', show), cat);
       swapText($('#hName', show), p.title);
       swapText($('#hPrice', show), fromPrice(p));
-      swapText($('#hGhost', show), cat);
       $('#hCard', show).setAttribute('href', `#/product/${p.handle}`);
       cur = n;
       setFills();
@@ -774,7 +773,6 @@
         .from('.hshow__arch', { clipPath: 'inset(100% 0% 0% 0%)', duration: 1.6, ease: 'expo.inOut', clearProps: 'clipPath' }, 0)
         .from(slides[0].querySelector('img'), { scale: 1.35, duration: 2.4 }, 0.1)
         .from('.hshow__ring', { opacity: 0, scale: 0.94, duration: 1.6 }, 0.45)
-        .from('#hGhost', { yPercent: 110, duration: 1.4 }, 0.55)
         .from('.hshow__card', { x: -40, opacity: 0, duration: 1.2 }, 0.9)
         .from('.hshow__bars', { opacity: 0, y: 10, duration: 1 }, 1.1)
         .add(() => startProgress());
@@ -783,7 +781,6 @@
       // Scroll depth: the arch, ring, ghost word and card drift at different speeds
       const scrub = { trigger: '.hero', start: 'top top', end: 'bottom top', scrub: true };
       gsap.to('.hshow__arch', { yPercent: -6, ease: 'none', scrollTrigger: { ...scrub } });
-      gsap.to('.hshow__ghost', { yPercent: 40, ease: 'none', scrollTrigger: { ...scrub } });
       gsap.to('.hshow__card', { yPercent: -60, ease: 'none', scrollTrigger: { ...scrub } });
       gsap.to('.hero__copy', { yPercent: -18, opacity: 0.2, ease: 'none', scrollTrigger: { ...scrub } });
 
@@ -791,10 +788,9 @@
       if (finePointer) {
         const ringX = gsap.quickTo('.hshow__ring', 'x', { duration: 1.2, ease: 'power3.out' });
         const ringY = gsap.quickTo('.hshow__ring', 'y', { duration: 1.2, ease: 'power3.out' });
-        const ghostX = gsap.quickTo('.hshow__ghost', 'x', { duration: 1.6, ease: 'power3.out' });
         const onMove = (e) => {
           const nx = e.clientX / innerWidth - 0.5; const ny = e.clientY / innerHeight - 0.5;
-          ringX(nx * -22); ringY(ny * -16); ghostX(nx * 40);
+          ringX(nx * -22); ringY(ny * -16);
         };
         window.addEventListener('pointermove', onMove);
         cleanups.push(() => window.removeEventListener('pointermove', onMove));

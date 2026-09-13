@@ -138,6 +138,7 @@ em, .italic { font-style: italic; }
 .btn--ghost:hover { color: var(--forest-deep); }
 .btn--dark { --btn-bg: var(--forest); --btn-fg: var(--champagne); --btn-dot: rgba(241, 224, 187, .14); --btn-hover: var(--forest-deep); }
 .btn--block { width: 100%; justify-content: space-between; }
+.btn:not(:has(.btn__dot)) { padding-inline: 1.6rem; justify-content: center; }
 .btn[disabled] { opacity: .5; pointer-events: none; }
 .link-underline { position: relative; display: inline-flex; align-items: center; gap: .5rem; font-weight: 500; font-size: .78rem; letter-spacing: .18em; text-transform: uppercase; color: var(--champagne); }
 .link-underline::after { content: ""; position: absolute; left: 0; right: 0; bottom: -4px; height: 1px; background: currentColor; transform-origin: right; transform: scaleX(.35); transition: transform .6s var(--ease-spring); }
@@ -250,19 +251,20 @@ html.no-intro .preloader { display: none; }
 .frame__core img { width: 100%; height: 100%; object-fit: cover; }
 
 /* ---------- Hero ---------- */
-.hero { position: relative; min-height: 100dvh; padding-top: calc(var(--announce-h) + var(--nav-h) + 4.5rem); padding-bottom: 4rem; display: flex; align-items: center; overflow: clip; }
+.hero { position: relative; min-height: 100dvh; padding-top: calc(var(--announce-h) + var(--nav-h) + 2.5rem); padding-bottom: 3rem; display: flex; align-items: center; overflow: clip; }
 .hero__bg { position: absolute; inset: 0; background:
   radial-gradient(60% 55% at 78% 45%, rgba(241, 224, 187, .10), transparent 70%),
   radial-gradient(40% 40% at 10% 90%, rgba(23, 41, 35, .9), transparent 70%); pointer-events: none; }
 .hero__grid { position: relative; display: grid; grid-template-columns: repeat(12, 1fr); gap: 1.5rem; align-items: center; }
-.hero__copy { grid-column: 1 / span 6; display: grid; gap: 2rem; }
-.hero__title { font-size: clamp(3.2rem, 7vw, 6.9rem); line-height: .96; }
+.hero__copy { grid-column: 1 / span 6; display: flex; flex-direction: column; align-items: flex-start; }
+.hero__eyebrow { margin-bottom: 1.6rem; }
+.hero__title { font-size: clamp(3rem, 5.6vw, 5.75rem); line-height: .98; }
 .hero__title em { font-style: italic; color: var(--champagne); }
 .hero__title .line { display: block; overflow: hidden; padding-bottom: .08em; margin-bottom: -.08em; }
 .hero__title .line > span { display: inline-block; }
-.hero__sub { font-size: clamp(1.05rem, 1.35vw, 1.22rem); color: var(--cream-muted); max-width: 40ch; }
-.hero__ctas { display: flex; flex-wrap: wrap; gap: .9rem; }
-.hero__media { grid-column: 7 / span 6; position: relative; height: min(78dvh, 46rem); }
+.hero__sub { margin-top: 1.6rem; font-size: clamp(1.05rem, 1.3vw, 1.2rem); color: var(--cream-muted); max-width: 36ch; text-wrap: pretty; }
+.hero__ctas { margin-top: 2.4rem; display: flex; flex-wrap: wrap; align-items: center; gap: 1rem 2rem; }
+.hero__media { grid-column: 7 / span 6; position: relative; height: clamp(26rem, calc(100dvh - var(--announce-h) - var(--nav-h) - 6rem), 44rem); }
 
 /* Hero showcase: an arch window (the window of the Tidely mark) cycling through products */
 .hshow { --arch-left: 14%; --bars-h: 3.75rem; position: relative; height: 100%; width: min(100%, 36rem); margin-left: auto; }
@@ -277,12 +279,6 @@ html.no-intro .preloader { display: none; }
   position: absolute; top: -14px; right: -14px; bottom: calc(var(--bars-h) - 14px); left: calc(var(--arch-left) - 14px);
   border: 1px solid var(--line-strong); border-radius: 999px 999px 10px 10px; pointer-events: none;
 }
-.hshow__ghost {
-  position: absolute; z-index: 0; left: -8%; top: 14%; margin: 0; overflow: hidden; padding-bottom: .12em; pointer-events: none; white-space: nowrap;
-  font-family: var(--display); font-style: italic; font-size: clamp(5rem, 11vw, 10.5rem); line-height: 1.05;
-  color: transparent; -webkit-text-stroke: 1px rgba(241, 224, 187, .22);
-}
-.hshow__ghost span { display: inline-block; }
 .hshow__card {
   position: absolute; z-index: 3; left: 0; bottom: 6.5rem; width: min(17.5rem, 72%); display: grid; gap: .4rem;
   padding: 1.1rem 1.1rem 1rem 1.25rem; border-radius: 12px; background: rgba(23, 41, 35, .92); border: 1px solid var(--line);
@@ -747,7 +743,6 @@ html.no-intro .preloader { display: none; }
   .hshow { --arch-left: 24%; width: 100%; }
   .hshow__card { bottom: 5rem; width: min(14.5rem, 70%); padding: .9rem 1rem; }
   .hshow__name { font-size: 1.1rem; }
-  .hshow__ghost { font-size: 4.5rem; top: 4%; left: -2%; }
   .anatomy, .compare, .news, .about-hero, .contact, .faq-grid, .pdp__grid { grid-template-columns: 1fr; }
   .faq-nav { position: static; grid-auto-flow: column; overflow-x: auto; gap: 1.25rem; }
   .gallery { position: static; grid-template-columns: 1fr; }
