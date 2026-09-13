@@ -1,0 +1,26 @@
+{%- comment -%}
+  Live store data for assets/app.js: products (price, variants, stock, images),
+  collection membership, the asset base URL and the current template.
+{%- endcomment -%}
+<script>
+  window.TIDELY_SHOP = {
+    assetBase: {{ 'app.js' | asset_url | split: 'app.js' | first | json }},
+    template: {{ template.name | json }},
+    currency: {{ cart.currency.iso_code | json }},
+    products: [
+      {%- for p in collections.all.products -%}
+        {{ p | json }}{% unless forloop.last %},{% endunless %}
+      {%- endfor -%}
+    ],
+    current: {% if template.name == 'product' %}{{ product | json }}{% else %}null{% endif %},
+    membership: {
+      {%- for c in collections -%}
+        {%- unless c.handle == 'all' or c.handle == 'frontpage' -%}
+          {%- for p in c.products limit: 50 -%}
+            {{ p.handle | json }}: [{{ c.handle | json }}],
+          {%- endfor -%}
+        {%- endunless -%}
+      {%- endfor -%}
+    }
+  };
+</script>

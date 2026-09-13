@@ -1,0 +1,28 @@
+<h1>Your bag</h1>
+{%- if cart.item_count > 0 -%}
+  <form action="{{ routes.cart_url }}" method="post" class="native-cart">
+    <ul>
+      {%- for item in cart.items -%}
+        <li>
+          <a href="{{ item.url }}">{{ item.product.title }}</a>
+          {%- unless item.product.has_only_default_variant %}<span>{{ item.variant.title }}</span>{% endunless %}
+          <label for="qty-{{ forloop.index }}" class="sr-only">Quantity for {{ item.product.title | escape }}</label>
+          <input id="qty-{{ forloop.index }}" type="number" name="updates[]" value="{{ item.quantity }}" min="0">
+          <span>{{ item.final_line_price | money }}</span>
+        </li>
+      {%- endfor -%}
+    </ul>
+    <p>Subtotal: {{ cart.total_price | money }}. Prices include VAT; shipping is calculated at checkout.</p>
+    <button type="submit" name="update" class="btn btn--ghost"><span>Update bag</span></button>
+    <button type="submit" name="checkout" class="btn btn--solid"><span>Checkout</span></button>
+  </form>
+{%- else -%}
+  <p>Your bag is empty. <a href="{{ routes.all_products_collection_url }}">Shop the collection</a>.</p>
+{%- endif -%}
+
+{% schema %}
+{
+  "name": "Cart",
+  "settings": []
+}
+{% endschema %}

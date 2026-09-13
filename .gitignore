@@ -3,3 +3,6 @@ node_modules/
 Thumbs.db
 desktop.ini
 .claude/settings.local.json
+shopify-theme.zip
+tools/mock_products.json
+__pycache__/

@@ -1,0 +1,27 @@
+{%- comment -%}
+  The storefront script (assets/app.js) renders this page with the Tidely design.
+  The noscript block below is the plain fallback for browsers without JavaScript.
+{%- endcomment -%}
+<noscript>
+  <div class="native-fallback">
+    {%- case template.name -%}
+      {%- when 'product' -%}
+        <h1>{{ product.title }}</h1>
+        <p>{{ product.price | money }}</p>
+        {{ product.description }}
+      {%- when 'collection' -%}
+        <h1>{{ collection.title }}</h1>
+        <ul>{% for p in collection.products %}<li><a href="{{ p.url }}">{{ p.title }}</a> {{ p.price | money }}</li>{% endfor %}</ul>
+      {%- else -%}
+        <h1>{{ shop.name }}</h1>
+        <p><a href="{{ routes.all_products_collection_url }}">Shop the collection</a></p>
+    {%- endcase -%}
+  </div>
+</noscript>
+
+{% schema %}
+{
+  "name": "Tidely storefront",
+  "settings": []
+}
+{% endschema %}

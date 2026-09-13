@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="{{ request.locale.iso_code }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ page_title }}{% unless page_title contains shop.name %} | {{ shop.name }}{% endunless %}</title>
+{%- if page_description %}<meta name="description" content="{{ page_description | escape }}">{% endif %}
+<link rel="canonical" href="{{ canonical_url }}">
+<meta name="theme-color" content="#26342F">
+<meta property="og:site_name" content="{{ shop.name }}">
+<meta property="og:url" content="{{ canonical_url }}">
+<meta property="og:title" content="{{ page_title | escape }}">
+<meta property="og:type" content="{% if template.name == 'product' %}product{% else %}website{% endif %}">
+<meta property="og:description" content="{{ page_description | default: shop.description | escape }}">
+{%- if template.name == 'product' and product.featured_image %}<meta property="og:image" content="https:{{ product.featured_image | image_url: width: 1200 }}">{% endif %}
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/svg+xml" href="{{ 'favicon.svg' | asset_url }}">
+<script>document.documentElement.classList.add("js");try{if(sessionStorage.getItem("tidely-intro")||matchMedia("(prefers-reduced-motion: reduce)").matches)document.documentElement.classList.add("no-intro")}catch(e){}</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..700;1,6..96,400..600&family=Jost:wght@300;400;500&display=swap" rel="stylesheet">
+{%- if template.name == 'index' %}<link rel="preload" as="image" href="{{ 'hero-steamer.webp' | asset_url }}">{% endif %}
+{{ 'tidely.css' | asset_url | stylesheet_tag }}
+{{ content_for_header }}
+</head>
+<body class="template-{{ template.name }}">
+<a class="skip-link" href="#main">Skip to content</a>
+
+<!-- Brand intro: letters assemble once per session -->
+<div class="preloader" id="preloader" aria-hidden="true">
+  <div class="preloader__inner">
+    <div class="preloader__word" aria-hidden="true">
+      <span>T</span><span>I</span><span>D</span><span>E</span><span>L</span><span>Y</span>
+    </div>
+    <span class="preloader__rule"></span>
+    <p class="preloader__tag">Organize a brighter you</p>
+  </div>
+</div>
+
+<!-- Route transition curtain -->
+<div class="curtain" id="curtain" aria-hidden="true"><span class="curtain__mark">T</span></div>
+
+<div class="announce" role="region" aria-label="Store announcements">
+  <div class="announce__track" id="announce">
+    <p class="is-active">Free shipping on orders over €49</p>
+    <p>14-day returns, no questions asked</p>
+    <p>Secure checkout with card, PayPal and Apple Pay</p>
+  </div>
+</div>
+
+<header class="header" id="header">
+  <nav class="nav" aria-label="Main">
+    <button class="nav__burger" id="burger" aria-label="Open menu" aria-expanded="false" aria-controls="menu">
+      <span></span><span></span>
+    </button>
+    <ul class="nav__links">
+      <li><a href="/collections/all" data-link>Shop</a></li>
+      <li class="nav__has-mega">
+        <button class="nav__mega-btn" aria-expanded="false" aria-controls="mega">Spaces <i data-icon="caret"></i></button>
+      </li>
+      <li><a href="/pages/about" data-link>Our story</a></li>
+    </ul>
+    <a href="/" class="logo" data-link aria-label="Tidely home">TIDELY</a>
+    <div class="nav__actions">
+      <a href="/pages/faq" data-link class="nav__text-link">Help</a>
+      <button class="icon-btn" id="searchBtn" aria-label="Search"><i data-icon="search"></i></button>
+      <button class="icon-btn cart-btn" id="cartBtn" aria-label="Open bag">
+        <i data-icon="bag"></i><span class="cart-btn__count" id="cartCount">0</span>
+      </button>
+    </div>
+  </nav>
+  <div class="mega" id="mega" hidden>
+    <div class="mega__inner" id="megaInner"></div>
+  </div>
+</header>
+
+<!-- Mobile menu -->
+<div class="menu" id="menu" hidden>
+  <nav class="menu__nav" aria-label="Mobile">
+    <a href="/collections/all" data-link>Shop all</a>
+    <a href="/collections/care" data-link>Care</a>
+    <a href="/collections/organize" data-link>Organize</a>
+    <a href="/collections/pet-home" data-link>Pet Home</a>
+    <a href="/collections/travel" data-link>Travel</a>
+    <a href="/pages/about" data-link>Our story</a>
+    <a href="/pages/faq" data-link>Help</a>
+  </nav>
+  <p class="menu__foot">Free shipping on orders over €49</p>
+</div>
+
+<main id="main" tabindex="-1">
+  {{ content_for_layout }}
+</main>
+
+<footer class="footer" id="footer"></footer>
+
+<!-- Cart drawer -->
+<div class="scrim" id="scrim" hidden></div>
+<aside class="drawer" id="drawer" aria-label="Your bag" aria-hidden="true">
+  <div class="drawer__head">
+    <h2>Your bag</h2>
+    <button class="icon-btn" id="drawerClose" aria-label="Close bag"><i data-icon="close"></i></button>
+  </div>
+  <div class="drawer__ship" id="drawerShip"></div>
+  <div class="drawer__body" id="drawerBody"></div>
+  <div class="drawer__foot" id="drawerFoot"></div>
+</aside>
+
+<!-- Search -->
+<div class="search" id="search" hidden role="dialog" aria-modal="true" aria-label="Search">
+  <div class="search__panel">
+    <label class="search__label" for="searchInput">Search Tidely</label>
+    <div class="search__field">
+      <i data-icon="search"></i>
+      <input id="searchInput" type="search" autocomplete="off" placeholder="Try “drawer” or “travel”">
+      <button class="icon-btn" id="searchClose" aria-label="Close search"><i data-icon="close"></i></button>
+    </div>
+    <div class="search__results" id="searchResults"></div>
+  </div>
+</div>
+
+<!-- Prototype-only checkout notice -->
+<div class="modal" id="modal" hidden role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+  <div class="modal__card">
+    <h2 id="modalTitle">Checkout goes here</h2>
+    <p>In the live store this button opens Shopify Checkout with card, PayPal, Apple Pay and Google Pay.</p>
+    <button class="btn btn--solid" id="modalClose">Back to the store</button>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="grain" aria-hidden="true"></div>
+
+{% render 'tidely-data' %}
+<script src="{{ 'gsap.min.js' | asset_url }}" defer></script>
+<script src="{{ 'ScrollTrigger.min.js' | asset_url }}" defer></script>
+<script src="{{ 'Flip.min.js' | asset_url }}" defer></script>
+<script src="{{ 'SplitText.min.js' | asset_url }}" defer></script>
+<script src="{{ 'CustomEase.min.js' | asset_url }}" defer></script>
+<script src="{{ 'lenis.min.js' | asset_url }}" defer></script>
+<script src="{{ 'icons.js' | asset_url }}" defer></script>
+<script src="{{ 'products.js' | asset_url }}" defer></script>
+<script src="{{ 'app.js' | asset_url }}" defer></script>
+</body>
+</html>
