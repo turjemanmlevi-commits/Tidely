@@ -170,8 +170,12 @@
 
   Pages.home = () => {
     const first = byHandle(HERO_SLIDES[0].handle);
-    const marqueeWords = ['Travel better', 'Stay organized', 'Everything in its place', 'A tidier, brighter you', 'Small details, a bigger difference'];
-    const group = `<div class="marquee__group" aria-hidden="true">${marqueeWords.map((w) => `<span class="marquee__item">${w}</span><span class="marquee__sep">${icon('sparkle')}</span>`).join('')}</div>`;
+    const service = [
+      { icon: 'truck', title: `Free shipping over ${money(CONFIG.freeShippingFrom)}`, text: `Orders under ${money(CONFIG.freeShippingFrom)} ship for ${money(CONFIG.shippingCost)}.` },
+      { icon: 'returns', title: `${CONFIG.returnDays}-day returns`, text: 'Changed your mind? Send it back.' },
+      { icon: 'lock', title: 'Secure checkout', text: 'Card, PayPal and Apple Pay.' },
+      { icon: 'chat', title: 'Real people', text: 'Write to us and a person replies.' },
+    ];
     const stack = [
       { icon: 'grid', title: 'Holds its shape', text: 'Reinforced board keeps every compartment upright, even when a section is half empty.', image: 'crop-drawer-pair', link: 'drawer-organizer-17-grid' },
       { icon: 'fold', title: 'Folds flat when you do not need it', text: 'Our fabric organizers collapse flat, so they never take up the space they were meant to save.', image: 'crop-underbed-fold', link: 'under-bed-storage-bag' },
@@ -210,8 +214,10 @@
       </div>
     </section>
 
-    <section class="marquee" aria-label="Tidely values">
-      <div class="marquee__track" id="marquee">${group}${group}</div>
+    <section class="service" id="service" aria-label="Shopping with Tidely">
+      <div class="wrap service__grid">
+        ${service.map((x) => `<div class="service__item"><span class="service__icon">${ic(x.icon)}</span><div><h3>${x.title}</h3><p>${x.text}</p></div></div>`).join('')}
+      </div>
     </section>
 
     <section class="section" data-section="spaces">
@@ -321,17 +327,6 @@
             <li><span class="n">iii</span><div><b>Rubber cleaning pad</b><span>Lifts stubborn marks and restores the nap.</span></div></li>
           </ul>
           <div data-reveal>${btn('Shop the suede kit', '#/product/suede-care-kit', 'solid', 'data-magnetic')}</div>
-        </div>
-      </div>
-    </section>
-
-    <section class="section" style="padding-top:0" data-section="promises">
-      <div class="wrap">
-        <div class="promises">
-          <div class="promise" data-reveal>${ic('truck')}<h3>Free shipping over ${money(CONFIG.freeShippingFrom)}</h3><p>Orders under ${money(CONFIG.freeShippingFrom)} ship for ${money(CONFIG.shippingCost)}.</p></div>
-          <div class="promise" data-reveal>${ic('returns')}<h3>${CONFIG.returnDays}-day returns</h3><p>Changed your mind? Send it back within ${CONFIG.returnDays} days of delivery.</p></div>
-          <div class="promise" data-reveal>${ic('lock')}<h3>Secure checkout</h3><p>Pay by card, PayPal, Apple Pay or Google Pay.</p></div>
-          <div class="promise" data-reveal>${ic('chat')}<h3>Help when you need it</h3><p>Write to us and a real person will get back to you.</p></div>
         </div>
       </div>
     </section>
@@ -806,19 +801,18 @@
       }
     }
 
-    // Marquee: velocity-reactive loop
-    const track = $('#marquee', root);
-    if (!reduced) {
-      const loop = gsap.to(track, { xPercent: -50, duration: 38, ease: 'none', repeat: -1 });
-      loop.totalTime(loop.duration() * 100); // start deep in the repeat cycle so it can also run backwards
-      let dir = 1;
+    // Service bar: hairlines draw across, then each promise rises in turn
+    const serviceBar = $('#service', root);
+    if (reduced) serviceBar.classList.add('is-in');
+    else {
+      gsap.set($$('.service__item', serviceBar), { y: 24, opacity: 0 });
+      gsap.set($$('.service__icon', serviceBar), { scale: 0.5, rotate: -40 });
       ScrollTrigger.create({
-        trigger: track, start: 'top bottom', end: 'bottom top',
-        onUpdate: (self) => {
-          const v = self.getVelocity();
-          if (self.direction !== dir) dir = self.direction;
-          gsap.to(loop, { timeScale: dir * Math.min(1 + Math.abs(v) / 400, 5), duration: 0.3, overwrite: true });
-          gsap.to(loop, { timeScale: dir, duration: 1.2, delay: 0.3, overwrite: false });
+        trigger: serviceBar, start: 'top 92%', once: true,
+        onEnter: () => {
+          serviceBar.classList.add('is-in');
+          gsap.to($$('.service__item', serviceBar), { y: 0, opacity: 1, duration: 1.1, stagger: 0.1, delay: 0.25, ease: 'expo.out' });
+          gsap.to($$('.service__icon', serviceBar), { scale: 1, rotate: 0, duration: 1.2, stagger: 0.1, delay: 0.3, ease: 'back.out(1.8)' });
         },
       });
     }
